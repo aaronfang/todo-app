@@ -1,4 +1,4 @@
-from todo_app import TodoApp
+from .todo_app import TodoApp
 
 __all__ = ['TodoApp']
 

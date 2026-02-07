@@ -1,10 +1,10 @@
 ![app_icon](https://github.com/user-attachments/assets/9f082ded-572f-435e-b237-f62349d6e2e8)
 
-[![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=fff)](#) [![Windows](https://custom-icon-badges.demolab.com/badge/Windows-0078D6?logo=windows11&logoColor=white)](#) [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-darkred.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![Python](https://img.shields.io/badge/Python-3776AB?logo=python&logoColor=fff)](#) [![Windows](https://custom-icon-badges.demolab.com/badge/Windows-0078D6?logo=windows11&logoColor=white)](#) [![macOS](https://img.shields.io/badge/macOS-000000?logo=apple&logoColor=white)](#) [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-darkred.svg)](https://www.gnu.org/licenses/gpl-3.0)
 
-# Todo App for Windows
+# Todo App for Windows & macOS
 
-A simple and private to-do GUI desktop app for Windows using python Tkinter and JSON local storage.
+A simple and private to-do GUI desktop app for Windows and macOS using python Tkinter and JSON local storage.
 
 Free and open-source alternative to Microsoft To Do without third-party dependencies.
 
@@ -14,6 +14,8 @@ Free and open-source alternative to Microsoft To Do without third-party dependen
 
 - Simple and intuitive interface
 - Dark mode
+- Cross-platform compatibility (Windows & macOS)
+- Native look and feel on each platform
 - Own your data with local storage
 - Lightweight free open-source software
 - No third-party dependencies
@@ -24,7 +26,7 @@ Free and open-source alternative to Microsoft To Do without third-party dependen
 
 or [visit the release page](https://github.com/jltk/todo-app/releases). 
 
-### Build from source
+### Build from source (Windows & macOS)
 
 To run this application, you need Python 3.9 or higher.
 
@@ -69,6 +71,17 @@ $ python todo_app.py
 | ---- | ----------- |
 | ```---``` | Adds seperator |
 | ```---title here``` | Adds a seperator with title |
+
+## macOS Compatibility
+
+This version includes improved macOS compatibility:
+
+- **Right-click menu**: Fixed context menu activation using Button-2 and Ctrl+Click
+- **Native fonts**: Uses SF Pro Text (13pt) on macOS for better readability on Retina displays
+- **Optimized layout**: Improved button sizing and input field proportions
+- **Native colors**: macOS-specific color scheme that matches system appearance
+- **Better UI scaling**: Proper padding and spacing for macOS interface guidelines
+- **Task icons**: Uses proper checkbox symbols (☐ ☑ ☒) instead of colored blocks on macOS
 
 ## Contribute
 
