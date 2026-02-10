@@ -1676,8 +1676,9 @@ class TodoApp:
             icon_label.pack(pady=(5, 5))
 
         about_text = (
-            "To-Do App 0.2.2\n\n"
-            "© 2024 Jens Lettkemann <jltk@pm.me>\n\n"
+            "To-Do App v1.0.0\n\n"
+            "Original: © 2024 Jens Lettkemann <jltk@pm.me>\n"
+            "Enhanced Fork: © 2026 Aaron\n\n"
             "This software is licensed under GPLv3+.\n"
         )
         github_link = "Source code"

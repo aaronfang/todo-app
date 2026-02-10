@@ -45,6 +45,7 @@ todo_app/todo_app/
 # PyInstaller
 *.manifest
 *.spec
+release/
 
 # Unit test / coverage reports
 htmlcov/
