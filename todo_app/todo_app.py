@@ -181,17 +181,18 @@ class TodoApp:
 
     def create_context_menu(self):
         self.context_menu = tk.Menu(self.root, tearoff=0)
-        self.context_menu.add_command(label="Edit Task", command=self.edit_task_shortcut)
-        self.context_menu.add_command(label="Set Deadline", command=self.set_deadline_shortcut)
-        self.context_menu.add_command(label="Add Subtask", command=self.add_subtask_shortcut)
+        self.context_menu.add_command(label="编辑任务", command=self.edit_task_shortcut)
+        self.context_menu.add_command(label="设置截止日期", command=self.set_deadline_shortcut)
+        self.context_menu.add_command(label="设置背景颜色", command=self.set_task_background_color_shortcut)
+        self.context_menu.add_command(label="添加子任务", command=self.add_subtask_shortcut)
         self.context_menu.add_separator()
-        self.context_menu.add_command(label="Un/Mark as Done", command=self.mark_selected_tasks_done)
-        self.context_menu.add_command(label="Un/Mark as Urgent", command=self.toggle_urgent_task)
-        self.context_menu.add_command(label="Un/Mark as Cancelled", command=self.mark_selected_tasks_cancelled)
-        self.context_menu.add_command(label="Remove Task/s", command=self.remove_selected_tasks)
+        self.context_menu.add_command(label="标记为完成/未完成", command=self.mark_selected_tasks_done)
+        self.context_menu.add_command(label="标记为紧急/取消紧急", command=self.toggle_urgent_task)
+        self.context_menu.add_command(label="标记为取消/恢复", command=self.mark_selected_tasks_cancelled)
+        self.context_menu.add_command(label="删除任务", command=self.remove_selected_tasks)
         
         self.context_menu.add_separator()
-        self.context_menu.add_command(label="Add Separator", command=self.add_separator_below)
+        self.context_menu.add_command(label="添加分隔符", command=self.add_separator_below)
         self.context_menu.add_separator()
         
         # 字体大小子菜单
@@ -202,17 +203,17 @@ class TodoApp:
         font_menu.add_command(label="重置字体大小", command=self.reset_font_size)
         self.context_menu.add_cascade(label="字体大小", menu=font_menu)
         
-        self.context_menu.add_command(label="Toggle Dark Mode", command=self.toggle_dark_mode)
+        self.context_menu.add_command(label="切换暗色模式", command=self.toggle_dark_mode)
         self.context_menu.add_separator()
-        self.context_menu.add_command(label="About", command=self.show_about_dialog)
+        self.context_menu.add_command(label="关于", command=self.show_about_dialog)
 
         self.separator_context_menu = tk.Menu(self.root, tearoff=0)
-        self.separator_context_menu.add_command(label="Edit Separator", command=self.edit_task)
-        self.separator_context_menu.add_command(label="Add Separator Title", command=self.add_separator_title)
-        self.separator_context_menu.add_command(label="Remove Separator", command=self.remove_selected_tasks)
+        self.separator_context_menu.add_command(label="编辑分隔符", command=self.edit_task)
+        self.separator_context_menu.add_command(label="添加分隔符标题", command=self.add_separator_title)
+        self.separator_context_menu.add_command(label="删除分隔符", command=self.remove_selected_tasks)
 
         self.separator_context_menu.add_separator()
-        self.separator_context_menu.add_command(label="Add Separator", command=self.add_separator_below)
+        self.separator_context_menu.add_command(label="添加分隔符", command=self.add_separator_below)
         self.separator_context_menu.add_separator()
         
         # 为分隔符菜单也添加字体大小选项
@@ -223,9 +224,10 @@ class TodoApp:
         separator_font_menu.add_command(label="重置字体大小", command=self.reset_font_size)
         self.separator_context_menu.add_cascade(label="字体大小", menu=separator_font_menu)
         
-        self.separator_context_menu.add_command(label="Toggle Dark Mode", command=self.toggle_dark_mode)
+        self.separator_context_menu.add_command(label="切换暗色模式", command=self.toggle_dark_mode)
         self.separator_context_menu.add_separator()
-        self.separator_context_menu.add_command(label="About", command=self.show_about_dialog)
+        self.separator_context_menu.add_command(label="关于", command=self.show_about_dialog)
+
 
 
 
@@ -308,6 +310,14 @@ class TodoApp:
                     if task.get('was_urgent', False):
                         task['urgent'] = True
                         task.pop('was_urgent', None)
+                    
+                    # 如果是子任务被标记为未完成，则自动将其主任务也标记为未完成
+                    if task.get('is_subtask', False):
+                        self.auto_uncomplete_parent_task(task)
+        
+        # 检查是否有主任务的所有子任务都完成了，如果是则自动完成主任务
+        self.auto_complete_parent_tasks()
+        
         # 任务完成状态改变时不改变窗口宽度
         self.populate_listbox_without_width_change()
         self.save_tasks()
@@ -836,9 +846,21 @@ class TodoApp:
             elif task.get('done', False):
                 self.listbox.itemconfig(index, {'bg': '', 'fg': colors['done_fg']})
             elif task.get('urgent', False):
+                # 紧急任务使用红色背景，覆盖自定义背景色
                 self.listbox.itemconfig(index, {'bg': colors['urgent_bg'], 'fg': 'white'})
             else:
-                self.listbox.itemconfig(index, {'bg': colors['listbox_bg'], 'fg': colors['fg']})
+                # 主任务：使用自定义背景色或默认主任务背景色
+                if not task.get('is_subtask', False):
+                    custom_bg = task.get('custom_bg_color', '')
+                    if custom_bg:
+                        # 使用用户自定义的背景色
+                        self.listbox.itemconfig(index, {'bg': custom_bg, 'fg': colors['fg']})
+                    else:
+                        # 使用默认主任务背景色
+                        self.listbox.itemconfig(index, {'bg': colors['main_task_bg'], 'fg': colors['fg']})
+                else:
+                    # 子任务：使用普通背景色
+                    self.listbox.itemconfig(index, {'bg': colors['listbox_bg'], 'fg': colors['fg']})
 
     def adjust_window_size(self, allow_width_change=True):
         num_tasks = len(self.display_tasks)
@@ -1371,7 +1393,8 @@ class TodoApp:
                             'subtasks': task.get('subtasks', []),  # 添加子任务支持
                             'is_subtask': task.get('is_subtask', False),  # 标记是否为子任务
                             'parent_task_id': task.get('parent_task_id', None),  # 父任务的task_id
-                            'task_id': task.get('task_id', None)}  # 任务的唯一ID
+                            'task_id': task.get('task_id', None),  # 任务的唯一ID
+                            'custom_bg_color': task.get('custom_bg_color', '')}  # 自定义背景色
                             for task in self.tasks if not task.get('completed_header', False)]
 
             self.get_tasks_file().write_text(json.dumps(tasks_to_save, indent=4), encoding='utf-8')
@@ -1470,7 +1493,8 @@ class TodoApp:
                     'done_fg': '#808080',
                     'urgent_bg': '#ff3b30',  # macOS红色
                     'separator_fg': '#8e8e93',  # macOS灰色
-                    'completed_header_fg': '#8e8e93'
+                    'completed_header_fg': '#8e8e93',
+                    'main_task_bg': '#2C3E50'  # 主任务默认背景色（暗色）
                 }
             else:
                 return {
@@ -1489,7 +1513,8 @@ class TodoApp:
                     'done_fg': '#808080',
                     'urgent_bg': '#ff3b30',
                     'separator_fg': '#8e8e93',
-                    'completed_header_fg': '#8e8e93'
+                    'completed_header_fg': '#8e8e93',
+                    'main_task_bg': '#F0E5FF'  # 主任务默认背景色（亮色）
                 }
         else:  # Windows和其他系统的原有颜色
             return {
@@ -1508,7 +1533,8 @@ class TodoApp:
                 'done_fg': '#808080' if self.is_dark_mode else '#808080',
                 'urgent_bg': '#de3f4d' if self.is_dark_mode else '#de3f4d',
                 'separator_fg': '#cccccc',
-                'completed_header_fg': '#888888' if self.is_dark_mode else '#666666'
+                'completed_header_fg': '#888888' if self.is_dark_mode else '#666666',
+                'main_task_bg': '#2C3E50' if self.is_dark_mode else '#F0E5FF'  # 主任务默认背景色
             }
 
     @staticmethod
@@ -1700,11 +1726,11 @@ class TodoApp:
             
             if len(selected_indices) == 1 and index < len(self.display_tasks) and self.display_tasks[selected_indices[0]].get('separator', False):
                 if self.display_tasks[selected_indices[0]].get('title', False):
-                    self.separator_context_menu.entryconfig("Edit Separator", state='normal')
-                    self.separator_context_menu.entryconfig("Add Separator Title", state='disabled')
+                    self.separator_context_menu.entryconfig("编辑分隔符", state='normal')
+                    self.separator_context_menu.entryconfig("添加分隔符标题", state='disabled')
                 else:
-                    self.separator_context_menu.entryconfig("Edit Separator", state='disabled')
-                    self.separator_context_menu.entryconfig("Add Separator Title", state='normal')
+                    self.separator_context_menu.entryconfig("编辑分隔符", state='disabled')
+                    self.separator_context_menu.entryconfig("添加分隔符标题", state='normal')
 
                 self.separator_context_menu.tk_popup(event.x_root, event.y_root)
             else:
@@ -1724,8 +1750,8 @@ class TodoApp:
                                            not self.display_tasks[selected_indices[0]].get('completed_header', False) and
                                            not self.display_tasks[selected_indices[0]].get('is_subtask', False))
                 
-                self.context_menu.entryconfig("Un/Mark as Done", state='disabled' if only_separators_selected else 'normal')
-                self.context_menu.entryconfig("Add Subtask", state='normal' if single_main_task_selected else 'disabled')
+                self.context_menu.entryconfig("标记为完成/未完成", state='disabled' if only_separators_selected else 'normal')
+                self.context_menu.entryconfig("添加子任务", state='normal' if single_main_task_selected else 'disabled')
                 self.context_menu.tk_popup(event.x_root, event.y_root)
         finally:
             self.context_menu.grab_release()
@@ -1747,6 +1773,256 @@ class TodoApp:
     def set_deadline_shortcut(self, event=None):
         if self.listbox.curselection():
             self.set_deadline()
+    
+    def set_task_background_color_shortcut(self, event=None):
+        if self.listbox.curselection():
+            self.set_task_background_color()
+    
+    def set_task_background_color(self):
+        """设置主任务的自定义背景色"""
+        selected_indices = self.listbox.curselection()
+        if not selected_indices:
+            return
+        
+        index = selected_indices[0]
+        current_task = self.display_tasks[index]
+        
+        # 不允许对分割线、折叠标题和子任务设置背景色
+        if (current_task.get('separator', False) or 
+            current_task.get('completed_header', False) or 
+            current_task.get('is_subtask', False)):
+            return
+        
+        # 确保任务在真实列表中
+        if current_task not in self.tasks:
+            return
+        
+        current_color = current_task.get('custom_bg_color', '')
+        
+        # 创建颜色选择对话框
+        color_window = tk.Toplevel(self.root)
+        color_window.title("设置背景颜色")
+        color_window.geometry("380x300")
+        color_window.transient(self.root)
+        color_window.grab_set()
+        
+        self.set_window_icon(color_window)
+        self.apply_title_bar_color(color_window)
+        
+        frame = tk.Frame(color_window, padx=20, pady=20)
+        frame.pack(fill="both", expand=True)
+        
+        # 颜色输入区域
+        input_label = tk.Label(frame, text="输入颜色代码 (如 #2C3E50):", font=self.get_system_font())
+        input_label.pack(pady=(0, 5))
+        
+        color_input_frame = tk.Frame(frame)
+        color_input_frame.pack(fill="x", pady=(0, 10))
+        
+        color_entry = tk.Entry(color_input_frame, font=self.get_system_font(), width=15)
+        color_entry.insert(0, current_color)
+        color_entry.pack(side="left", padx=(0, 5))
+        
+        # 颜色预览框
+        preview_label = tk.Label(color_input_frame, text="  预览  ", relief="solid", borderwidth=1)
+        preview_label.pack(side="left")
+        
+        def update_preview(*args):
+            """更新颜色预览"""
+            color = color_entry.get().strip()
+            if color:
+                try:
+                    # 验证颜色代码
+                    preview_label.configure(bg=color)
+                except:
+                    # 无效颜色，显示默认
+                    preview_label.configure(bg='white' if not self.is_dark_mode else '#2d2d2d')
+            else:
+                preview_label.configure(bg='white' if not self.is_dark_mode else '#2d2d2d')
+        
+        color_entry.bind('<KeyRelease>', update_preview)
+        update_preview()  # 初始预览
+        
+        # 分隔线
+        separator = ttk.Separator(frame, orient='horizontal')
+        separator.pack(fill="x", pady=(5, 10))
+        
+        # 预设颜色标签
+        preset_label = tk.Label(frame, text="或选择预设颜色:", font=self.get_system_font())
+        preset_label.pack(pady=(0, 8))
+        
+        # 预设的颜色选项（适合暗色主题）
+        if self.is_dark_mode:
+            preset_colors = [
+                ('#2C3E50', '深蓝灰'),
+                ('#34495E', '石板灰'),
+                ('#16A085', '深青绿'),
+                ('#27AE60', '深绿'),
+                ('#2980B9', '深蓝'),
+                ('#8E44AD', '深紫'),
+                ('#C0392B', '深红'),
+                ('#D35400', '深橙'),
+                ('#7F8C8D', '灰色'),
+                ('#9B59B6', '紫色'),
+                ('#E67E22', '橙色'),
+                ('', '无背景')
+            ]
+        else:
+            # 浅色主题的颜色
+            preset_colors = [
+                ('#FFE5E5', '浅红'),
+                ('#FFF0E5', '浅橙'),
+                ('#FFFFE5', '浅黄'),
+                ('#E5FFE5', '浅绿'),
+                ('#E5F5FF', '浅蓝'),
+                ('#F0E5FF', '浅紫'),
+                ('#FFE5F5', '浅粉'),
+                ('#F0F0F0', '浅灰'),
+                ('#E8F8F5', '淡青'),
+                ('#FEF5E7', '米色'),
+                ('#F4ECF7', '淡紫'),
+                ('', '无背景')
+            ]
+        
+        # 创建颜色按钮网格
+        color_frame = tk.Frame(frame)
+        color_frame.pack(pady=(0, 10))
+        
+        for i, (color, name) in enumerate(preset_colors):
+            row = i // 4
+            col = i % 4
+            
+            def make_color_button(c):
+                def set_color():
+                    color_entry.delete(0, tk.END)
+                    color_entry.insert(0, c)
+                    update_preview()
+                return set_color
+            
+            if color:
+                # 有颜色的按钮
+                btn = tk.Button(color_frame, text=name, bg=color, width=8, height=1,
+                              relief='raised', borderwidth=1,
+                              font=(self.get_system_font()[0], self.get_system_font()[1] - 2),
+                              command=make_color_button(color))
+            else:
+                # 无背景色按钮
+                btn = tk.Button(color_frame, text=name, width=8, height=1,
+                              relief='raised', borderwidth=1,
+                              font=(self.get_system_font()[0], self.get_system_font()[1] - 2),
+                              command=make_color_button(color))
+            
+            btn.grid(row=row, column=col, padx=2, pady=2)
+        
+        button_frame = tk.Frame(frame)
+        button_frame.pack(fill="x", pady=(10, 0))
+        
+        def on_save():
+            color = color_entry.get().strip()
+            if color:
+                # 验证颜色代码格式
+                if not color.startswith('#'):
+                    color = '#' + color
+                try:
+                    # 尝试使用颜色来验证
+                    test_label = tk.Label(color_window, bg=color)
+                    test_label.destroy()
+                    current_task['custom_bg_color'] = color
+                except:
+                    # 无效颜色，不保存
+                    pass
+            else:
+                current_task.pop('custom_bg_color', None)
+            
+            self.populate_listbox_without_width_change()
+            self.save_tasks()
+            color_window.destroy()
+        
+        def on_cancel():
+            color_window.destroy()
+        
+        color_entry.bind("<Return>", lambda e: on_save())
+        
+        # 根据平台调整按钮宽度
+        if sys.platform == "darwin":  # macOS
+            button_width = 8
+            button_padx = (0, 8)
+        else:  # Windows和其他系统
+            button_width = 6
+            button_padx = (0, 5)
+        
+        save_button = ttk.Button(button_frame, text="确定", command=on_save, width=button_width)
+        save_button.pack(side="left", padx=button_padx)
+        
+        cancel_button = ttk.Button(button_frame, text="取消", command=on_cancel, width=button_width)
+        cancel_button.pack(side="left")
+        
+        color_window.protocol("WM_DELETE_WINDOW", on_cancel)
+        self.center_window_over_window(color_window)
+    
+    def auto_complete_parent_tasks(self):
+        """检查并自动完成所有子任务都已完成的主任务"""
+        for task in self.tasks:
+            # 只检查主任务
+            if task.get('is_subtask', False) or task.get('separator', False):
+                continue
+            
+            # 如果主任务已经完成，跳过
+            if task.get('done', False):
+                continue
+            
+            # 查找该主任务的所有子任务
+            parent_task_id = task.get('task_id')
+            if not parent_task_id:
+                continue
+            
+            subtasks = [t for t in self.tasks 
+                       if t.get('is_subtask', False) and 
+                       t.get('parent_task_id') == parent_task_id]
+            
+            # 如果没有子任务，跳过
+            if not subtasks:
+                continue
+            
+            # 检查是否所有子任务都完成了
+            all_subtasks_done = all(st.get('done', False) for st in subtasks)
+            
+            if all_subtasks_done:
+                # 自动完成主任务
+                task['done'] = True
+                task['completed_time'] = datetime.now().strftime('%Y-%m-%d %H:%M')
+                # 如果有紧急状态，保存它
+                if task.get('urgent', False):
+                    task['was_urgent'] = True
+                    task['urgent'] = False
+    
+    def auto_uncomplete_parent_task(self, subtask):
+        """当子任务被标记为未完成时，自动将其主任务也标记为未完成"""
+        if not subtask.get('is_subtask', False):
+            return
+        
+        parent_task_id = subtask.get('parent_task_id')
+        if not parent_task_id:
+            return
+        
+        # 查找父任务
+        parent_task = None
+        for task in self.tasks:
+            if task.get('task_id') == parent_task_id and not task.get('is_subtask', False):
+                parent_task = task
+                break
+        
+        if not parent_task:
+            return
+        
+        # 如果父任务已完成，将其标记为未完成
+        if parent_task.get('done', False):
+            parent_task['done'] = False
+            parent_task.pop('completed_time', None)
+            # 恢复之前的紧急状态
+            if parent_task.get('was_urgent', False):
+                parent_task['urgent'] = True
+                parent_task.pop('was_urgent', None)
     
     def set_deadline(self):
         """设置任务的截止日期"""
