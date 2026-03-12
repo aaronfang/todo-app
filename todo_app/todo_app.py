@@ -259,7 +259,8 @@ class TodoApp:
                     self.tasks.append({'name': '─' * 40, 'separator': True, 'title': False})
             else:
                 self.tasks.append({'name': task_name})
-            self.populate_listbox()
+            # 添加任务时保持窗口尺寸不变
+            self.populate_listbox_without_width_change()
             self.save_tasks()
             self.entry.delete("1.0", tk.END)
             self.update_buttons_state()
@@ -278,7 +279,8 @@ class TodoApp:
             # 从真实的 tasks 列表中删除
             if task_to_remove in self.tasks:
                 self.tasks.remove(task_to_remove)
-        self.populate_listbox()
+        # 删除任务时保持窗口尺寸不变
+        self.populate_listbox_without_width_change()
         self.save_tasks()
         self.update_buttons_state()
         self.update_title()
@@ -415,7 +417,8 @@ class TodoApp:
                     current_task['name'] = '─' * 40
                     current_task['title'] = False
 
-                self.populate_listbox()
+                # 编辑任务时保持窗口尺寸不变
+                self.populate_listbox_without_width_change()
                 self.save_tasks()
                 self.update_buttons_state()
                 edit_window.destroy()
@@ -470,7 +473,8 @@ class TodoApp:
                 new_name = text_entry.get("1.0", "end-1c").strip()
                 if new_name:
                     current_task['name'] = new_name
-                    self.populate_listbox()
+                    # 编辑任务时保持窗口尺寸不变
+                    self.populate_listbox_without_width_change()
                     self.save_tasks()
                     self.update_buttons_state()
                 edit_window.destroy()
@@ -536,7 +540,8 @@ class TodoApp:
                     display_text = f"{separator_line_before} {title_text} {separator_line_after}"
                     current_task['name'] = display_text
                     current_task['title'] = True
-                    self.populate_listbox()
+                    # 添加分隔符标题时保持窗口尺寸不变
+                    self.populate_listbox_without_width_change()
                     self.save_tasks()
                     self.update_buttons_state()
                 edit_window.destroy()
@@ -575,7 +580,8 @@ class TodoApp:
         separator = {'name': '─' * 40, 'separator': True, 'title': False}
         self.tasks.insert(index + 1, separator)
 
-        self.populate_listbox()
+        # 添加分隔符时保持窗口尺寸不变
+        self.populate_listbox_without_width_change()
         self.save_tasks()
         self.update_buttons_state()
 
@@ -862,7 +868,7 @@ class TodoApp:
                     # 子任务：使用普通背景色
                     self.listbox.itemconfig(index, {'bg': colors['listbox_bg'], 'fg': colors['fg']})
 
-    def adjust_window_size(self, allow_width_change=True):
+    def adjust_window_size(self, allow_width_change=True, allow_height_change=True):
         num_tasks = len(self.display_tasks)
         
         # 根据平台调整行高
@@ -893,9 +899,10 @@ class TodoApp:
         if new_height > max_screen_height:
             new_height = max_screen_height
         
-        # 获取当前窗口宽度
+        # 获取当前窗口尺寸
         current_geometry = self.root.geometry()
         current_width = int(current_geometry.split('x')[0]) if 'x' in current_geometry else 450
+        current_height = int(current_geometry.split('x')[1].split('+')[0]) if 'x' in current_geometry else new_height
         
         # 如果不允许宽度变化，直接使用当前宽度
         if not allow_width_change:
@@ -977,7 +984,13 @@ class TodoApp:
                 # 其他情况保持当前宽度
                 final_width = max(current_width, min_width)
         
-        self.root.geometry(f"{final_width}x{new_height}")
+        # 如果不允许高度变化，使用当前高度
+        if not allow_height_change:
+            final_height = current_height
+        else:
+            final_height = new_height
+        
+        self.root.geometry(f"{final_width}x{final_height}")
 
     def update_title(self):
         # 只计算主任务的数量（不包括子任务、分割线和已取消的任务）
@@ -1075,7 +1088,7 @@ class TodoApp:
         self.save_config()
     
     def populate_listbox_without_width_change(self):
-        """重新填充列表框但不改变窗口宽度"""
+        """重新填充列表框但不改变窗口宽度和高度"""
         self.listbox.delete(0, tk.END)
         colors = self.get_theme_colors()
         
@@ -1142,8 +1155,8 @@ class TodoApp:
         self.display_tasks = organized_tasks
         
         self.update_listbox_task_backgrounds()
-        # 只调整高度，不改变宽度
-        self.adjust_window_size(allow_width_change=False)
+        # 不改变宽度和高度
+        self.adjust_window_size(allow_width_change=False, allow_height_change=False)
         self.update_title()
 
     def show_context_menu_or_ctrl_click(self, event):
@@ -1653,7 +1666,7 @@ class TodoApp:
         # 更新按钮字体
         self.update_buttons_style(self.get_theme_colors()['button_bg'], self.get_theme_colors()['button_fg'])
         
-        # 重新计算窗口大小
+        # 重新计算窗口大小，但允许宽度变化以适应新的字体大小
         self.populate_listbox()  # 这会调用 adjust_window_size()
         
         # 保存配置
