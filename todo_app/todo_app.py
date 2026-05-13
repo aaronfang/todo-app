@@ -21,6 +21,7 @@ class TodoApp:
         self.is_dark_mode = False
         self.font_size = 13 if sys.platform == "darwin" else 10  # 默认字体大小
         self.tasks = self.load_tasks()  # 真实的任务数据（不包含 completed_header）
+        self.notes = self.load_notes()  # 笔记数据
         
         # 确保所有任务都有task_id，并修复父子关系
         self.ensure_task_ids()
@@ -31,6 +32,7 @@ class TodoApp:
         self.key_event_processing = False
         self.selected_indices = set()
         self.collapsed_sections = set()  # 记录哪些分组的已完成任务被折叠
+        self.collapsed_subtask_sections = set()  # 记录哪些主任务的已完成子任务被折叠（key=parent_task_id）
 
         self.root.withdraw()
 
@@ -72,11 +74,12 @@ class TodoApp:
         self.set_window_icon()
 
         self.create_main_frame()
-        self.create_listbox()
-        self.create_input_frame()
-        self.create_buttons()
+        self.create_notebook()
+        self.create_tasks_tab()
+        self.create_notes_tab()
 
         self.populate_listbox()
+        self.populate_notes_listbox()
         self.apply_theme()
         self.update_buttons_state()
         self.create_context_menu()
@@ -86,17 +89,87 @@ class TodoApp:
         self.main_frame.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
         self.root.grid_rowconfigure(0, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
+    
+    def create_notebook(self):
+        """创建 Notebook（标签页）"""
+        # 配置 Notebook 样式以匹配主题
+        style = ttk.Style()
+        colors = self.get_theme_colors()
+        
+        # 配置 Notebook 样式
+        style.theme_use('default')
+        style.configure('TNotebook', background=colors['bg'], borderwidth=0)
+        style.configure('TNotebook.Tab', background=colors['button_bg'], foreground=colors['button_fg'], 
+                       padding=[10, 2], borderwidth=0)
+        style.map('TNotebook.Tab', 
+                 background=[('selected', colors['bg'])],
+                 foreground=[('selected', colors['fg'])])
+        
+        self.notebook = ttk.Notebook(self.main_frame)
+        self.notebook.grid(row=0, column=0, sticky="nsew")
+        self.main_frame.grid_rowconfigure(0, weight=1)
+        self.main_frame.grid_columnconfigure(0, weight=1)
+    
+    def create_tasks_tab(self):
+        """创建任务标签页"""
+        self.tasks_frame = tk.Frame(self.notebook)
+        self.notebook.add(self.tasks_frame, text="任务")
+        
+        self.create_listbox()
+        self.create_input_frame()
+        self.create_buttons()
+    
+    def create_notes_tab(self):
+        """创建笔记标签页"""
+        self.notes_frame = tk.Frame(self.notebook)
+        self.notebook.add(self.notes_frame, text="笔记")
+        
+        # 创建笔记列表框
+        self.notes_listbox = tk.Listbox(self.notes_frame, selectmode=tk.EXTENDED, bd=0, highlightthickness=0,
+                                       activestyle='none', font=self.get_system_font())
+        self.notes_listbox.grid(row=0, column=0, columnspan=4, sticky="nsew", padx=10, pady=(8, 5))
+        self.notes_frame.grid_rowconfigure(0, weight=1)
+        self.notes_frame.grid_columnconfigure(0, weight=1)
+        
+        # 创建笔记输入框
+        self.notes_input_frame = tk.Frame(self.notes_frame)
+        self.notes_input_frame.grid(row=1, column=0, columnspan=4, sticky="ew", padx=10, pady=5)
+        self.notes_frame.grid_columnconfigure(0, weight=1)
+        
+        self.notes_entry = tk.Entry(self.notes_input_frame, font=self.get_system_font())
+        self.notes_entry.grid(row=0, column=0, sticky="ew")
+        self.notes_input_frame.grid_columnconfigure(0, weight=1)
+        self.notes_entry.bind('<Return>', self.add_note)
+        
+        # 创建笔记按钮
+        self.notes_button_frame = tk.Frame(self.notes_frame)
+        self.notes_button_frame.grid(row=2, column=0, columnspan=4, sticky="ew", padx=10, pady=(0, 8))
+        
+        self.add_note_button = tk.Button(self.notes_button_frame, text="添加", command=lambda: self.add_note(), width=8)
+        self.add_note_button.grid(row=0, column=0, padx=(0, 5))
+        
+        self.delete_note_button = tk.Button(self.notes_button_frame, text="删除", command=self.delete_selected_notes, width=8, state=tk.DISABLED)
+        self.delete_note_button.grid(row=0, column=1, padx=5)
+        
+        self.edit_note_button = tk.Button(self.notes_button_frame, text="编辑", command=self.edit_note_context, width=8, state=tk.DISABLED)
+        self.edit_note_button.grid(row=0, column=2, padx=5)
+        
+        # 绑定笔记列表框选择事件
+        self.notes_listbox.bind('<<ListboxSelect>>', lambda e: self.update_notes_buttons_state())
+        
+        # 创建笔记右键菜单
+        self.create_notes_context_menu()
 
     def create_listbox(self):
         # 不设置固定height，让listbox根据内容和窗口大小自适应
-        self.listbox = tk.Listbox(self.main_frame, selectmode=tk.EXTENDED, bd=0, highlightthickness=0,
+        self.listbox = tk.Listbox(self.tasks_frame, selectmode=tk.EXTENDED, bd=0, highlightthickness=0,
                                   activestyle='none', font=self.get_system_font())
         self.listbox.grid(row=0, column=0, columnspan=4, sticky="nsew", padx=10, pady=(8, 5))
-        self.main_frame.grid_rowconfigure(0, weight=1)
-        self.main_frame.grid_columnconfigure(0, weight=1)
+        self.tasks_frame.grid_rowconfigure(0, weight=1)
+        self.tasks_frame.grid_columnconfigure(0, weight=1)
 
     def create_input_frame(self):
-        self.input_frame = tk.Frame(self.main_frame)
+        self.input_frame = tk.Frame(self.tasks_frame)
         self.input_frame.grid(row=1, column=0, columnspan=4, sticky="ew", padx=10, pady=(0, 5))
         
         # 根据平台调整输入框的权重分配
@@ -228,6 +301,42 @@ class TodoApp:
         self.separator_context_menu.add_separator()
         self.separator_context_menu.add_command(label="关于", command=self.show_about_dialog)
 
+    def create_notes_context_menu(self):
+        """创建笔记右键菜单"""
+        self.notes_context_menu = tk.Menu(self.root, tearoff=0)
+        self.notes_context_menu.add_command(label="复制笔记", command=self.copy_note)
+        self.notes_context_menu.add_command(label="编辑笔记", command=self.edit_note_context)
+        self.notes_context_menu.add_separator()
+        self.notes_context_menu.add_command(label="删除笔记", command=self.delete_selected_notes)
+        
+        # 绑定右键菜单
+        if sys.platform == "darwin":  # macOS
+            self.notes_listbox.bind('<Button-2>', self.show_notes_context_menu)
+            self.notes_listbox.bind('<Control-Button-1>', self.show_notes_context_menu)
+        else:  # Windows 和其他系统
+            self.notes_listbox.bind('<Button-3>', self.show_notes_context_menu)
+    
+    def show_notes_context_menu(self, event):
+        """显示笔记右键菜单"""
+        # 右键点击时选中该项
+        index = self.notes_listbox.nearest(event.y)
+        if index >= 0:
+            self.notes_listbox.selection_clear(0, tk.END)
+            self.notes_listbox.selection_set(index)
+            self.notes_listbox.activate(index)
+            self.update_notes_buttons_state()
+            
+            # 显示菜单
+            try:
+                self.notes_context_menu.tk_popup(event.x_root, event.y_root)
+            finally:
+                self.notes_context_menu.grab_release()
+
+
+
+
+
+
 
 
 
@@ -272,7 +381,8 @@ class TodoApp:
         for index in reversed(selected_indices):
             # 跳过折叠标题，不允许删除
             if (index >= len(self.display_tasks) or 
-                self.display_tasks[index].get('completed_header', False)):
+                self.display_tasks[index].get('completed_header', False) or 
+                self.display_tasks[index].get('subtask_completed_header', False)):
                 continue
             # 从 display_tasks 中获取任务信息
             task_to_remove = self.display_tasks[index]
@@ -291,7 +401,8 @@ class TodoApp:
             display_task = self.display_tasks[index]
             # 跳过分割线和折叠标题
             if (display_task.get('separator', False) or 
-                display_task.get('completed_header', False)):
+                display_task.get('completed_header', False) or 
+                display_task.get('subtask_completed_header', False)):
                 continue
             # 在真实的 tasks 列表中找到对应的任务并修改
             if display_task in self.tasks:
@@ -332,7 +443,8 @@ class TodoApp:
             display_task = self.display_tasks[index]
             # 跳过分割线和折叠标题
             if (display_task.get('separator', False) or 
-                display_task.get('completed_header', False)):
+                display_task.get('completed_header', False) or 
+                display_task.get('subtask_completed_header', False)):
                 continue
             # 修改真实任务
             if display_task in self.tasks:
@@ -353,7 +465,8 @@ class TodoApp:
             display_task = self.display_tasks[index]
             # 跳过分割线和折叠标题
             if (display_task.get('separator', False) or 
-                display_task.get('completed_header', False)):
+                display_task.get('completed_header', False) or 
+                display_task.get('subtask_completed_header', False)):
                 continue
             # 修改真实任务
             if display_task in self.tasks:
@@ -374,7 +487,8 @@ class TodoApp:
         current_task = self.display_tasks[index]
         
         # 不允许编辑折叠标题
-        if current_task.get('completed_header', False):
+        if (current_task.get('completed_header', False) or 
+            current_task.get('subtask_completed_header', False)):
             return
         
         # 找到真实任务在 self.tasks 中的位置
@@ -592,7 +706,9 @@ class TodoApp:
         colors = self.get_theme_colors()
         
         # 确保 self.tasks 不包含 completed_header（真实任务数据）
-        self.tasks = [task for task in self.tasks if not task.get('completed_header', False)]
+        self.tasks = [task for task in self.tasks 
+                     if not task.get('completed_header', False) 
+                     and not task.get('subtask_completed_header', False)]
         
         # 重新组织任务列表：将完成的任务移到分割线最下部，并添加折叠标题
         # organized_tasks 包含 completed_header，用于显示
@@ -613,6 +729,15 @@ class TodoApp:
                 done_count = task.get('done_count', 0)
                 arrow = '▶' if is_collapsed else '▼'
                 display_text = f"  {arrow} 已完成 ({done_count})"
+                self.listbox.insert(tk.END, display_text)
+                self.listbox.itemconfig(index, {'bg': '', 'fg': colors['completed_header_fg']})
+            elif task.get('subtask_completed_header', False):
+                # 子任务已完成分组的折叠/展开标题
+                ptid = task.get('parent_task_id', '')
+                is_collapsed = ptid in self.collapsed_subtask_sections
+                done_count = task.get('done_count', 0)
+                arrow = '▶' if is_collapsed else '▼'
+                display_text = f"        {arrow} 已完成子任务 ({done_count})"
                 self.listbox.insert(tk.END, display_text)
                 self.listbox.itemconfig(index, {'bg': '', 'fg': colors['completed_header_fg']})
             else:
@@ -669,7 +794,7 @@ class TodoApp:
             task = self.tasks[i]
             
             # 跳过已经是折叠标题的任务
-            if task.get('completed_header', False):
+            if task.get('completed_header', False) or task.get('subtask_completed_header', False):
                 i += 1
                 continue
                 
@@ -724,7 +849,28 @@ class TodoApp:
                         current_section_done.extend(task_group)
                     else:
                         # 主任务未完成，整个任务组保持在活跃区域
-                        current_section_active.extend(task_group)
+                        # 但需要将已完成的子任务分组并添加折叠功能
+                        active_subtasks = [t for t in task_group[1:] if not t.get('done', False) and not t.get('cancelled', False)]
+                        done_subtasks = [t for t in task_group[1:] if t.get('done', False) or t.get('cancelled', False)]
+                        
+                        # 添加主任务
+                        current_section_active.append(main_task)
+                        
+                        # 如果有已完成的子任务，先添加子任务折叠标题（紧跟在主任务后面）
+                        if done_subtasks:
+                            is_collapsed = parent_task_id in self.collapsed_subtask_sections
+                            subtask_done_count = len(done_subtasks)
+                            subtask_header = {
+                                'subtask_completed_header': True,
+                                'parent_task_id': parent_task_id,
+                                'done_count': subtask_done_count
+                            }
+                            current_section_active.append(subtask_header)
+                            if not is_collapsed:
+                                current_section_active.extend(done_subtasks)
+                        
+                        # 最后添加未完成的子任务
+                        current_section_active.extend(active_subtasks)
                     
                     i += 1
         
@@ -802,11 +948,13 @@ class TodoApp:
         valid_selections = [idx for idx in selected_indices 
                            if idx < len(self.display_tasks)
                            and not self.display_tasks[idx].get('separator', False) 
-                           and not self.display_tasks[idx].get('completed_header', False)]
+                           and not self.display_tasks[idx].get('completed_header', False)
+                           and not self.display_tasks[idx].get('subtask_completed_header', False)]
         
         only_separators_selected = all(idx < len(self.display_tasks) and 
                                        (self.display_tasks[idx].get('separator', False) or 
-                                        self.display_tasks[idx].get('completed_header', False))
+                                        self.display_tasks[idx].get('completed_header', False) or 
+                                        self.display_tasks[idx].get('subtask_completed_header', False))
                                        for idx in selected_indices)
         all_cancelled = all(idx < len(self.display_tasks) and 
                            self.display_tasks[idx].get('cancelled', False) 
@@ -839,6 +987,11 @@ class TodoApp:
         style.map('TButton', 
                 background=[('active', bg), ('disabled', '#666666' if self.is_dark_mode else '#c0c0c0')],
                 foreground=[('active', fg), ('disabled', 'grey')])
+        
+        # 更新笔记按钮的样式
+        colors = self.get_theme_colors()
+        for button in [self.add_note_button, self.delete_note_button, self.edit_note_button]:
+            button.config(bg=bg, fg=fg, activebackground=bg, activeforeground=fg)
 
     def update_listbox_task_backgrounds(self):
         colors = self.get_theme_colors()
@@ -846,6 +999,8 @@ class TodoApp:
             if task.get('separator', False):
                 self.listbox.itemconfig(index, {'bg': '', 'fg': colors['separator_fg']})
             elif task.get('completed_header', False):
+                self.listbox.itemconfig(index, {'bg': '', 'fg': colors['completed_header_fg']})
+            elif task.get('subtask_completed_header', False):
                 self.listbox.itemconfig(index, {'bg': '', 'fg': colors['completed_header_fg']})
             elif task.get('cancelled', False):
                 self.listbox.itemconfig(index, {'bg': '', 'fg': '#a9a9a9'})
@@ -935,6 +1090,12 @@ class TodoApp:
                     is_collapsed = section_id in self.collapsed_sections
                     arrow = '▶' if is_collapsed else '▼'
                     display_text = f"  {arrow} 已完成 ({done_count})"
+                elif task.get('subtask_completed_header', False):
+                    ptid = task.get('parent_task_id', '')
+                    done_count = task.get('done_count', 0)
+                    is_collapsed = ptid in self.collapsed_subtask_sections
+                    arrow = '▶' if is_collapsed else '▼'
+                    display_text = f"        {arrow} 已完成子任务 ({done_count})"
                 else:
                     icons = self.get_task_icons()
                     deadline_indicator = self.get_deadline_indicator(task)
@@ -1009,12 +1170,29 @@ class TodoApp:
 
     def apply_theme(self):
         colors = self.get_theme_colors()
+        
+        # 更新 Notebook 样式
+        style = ttk.Style()
+        style.configure('TNotebook', background=colors['bg'], borderwidth=0)
+        style.configure('TNotebook.Tab', background=colors['button_bg'], foreground=colors['button_fg'], 
+                       padding=[10, 2], borderwidth=0)
+        style.map('TNotebook.Tab', 
+                 background=[('selected', colors['bg'])],
+                 foreground=[('selected', colors['fg'])])
+        
         self.root.configure(bg=colors['bg'])
         self.main_frame.configure(bg=colors['bg'])
+        self.tasks_frame.configure(bg=colors['bg'])
+        self.notes_frame.configure(bg=colors['bg'])
         self.input_frame.configure(bg=colors['bg'])
+        self.notes_input_frame.configure(bg=colors['bg'])
+        self.notes_button_frame.configure(bg=colors['bg'])
         self.listbox.configure(bg=colors['listbox_bg'], fg=colors['fg'],
                                selectbackground=colors['select_bg'], selectforeground=colors['fg'])
+        self.notes_listbox.configure(bg=colors['listbox_bg'], fg=colors['fg'],
+                                    selectbackground=colors['select_bg'], selectforeground=colors['fg'])
         self.entry.configure(bg=colors['entry_bg'], fg=colors['fg'])
+        self.notes_entry.configure(bg=colors['entry_bg'], fg=colors['fg'], insertbackground=colors['caret_color'])
         self.update_buttons_style(colors['button_bg'], colors['button_fg'])
         self.update_listbox_task_backgrounds()
 
@@ -1054,6 +1232,11 @@ class TodoApp:
             self.toggle_completed_section(index)
             return 'break'  # 阻止事件继续传播
         
+        # 如果双击的是子任务折叠标题，切换子任务折叠状态
+        if index < len(self.display_tasks) and self.display_tasks[index].get('subtask_completed_header', False):
+            self.toggle_subtask_completed_section(index)
+            return 'break'
+        
         # 如果双击的是分割线，不做任何操作
         if (index < len(self.display_tasks) and 
             self.display_tasks[index].get('separator', False)):
@@ -1087,13 +1270,35 @@ class TodoApp:
         self.populate_listbox_without_width_change()
         self.save_config()
     
+    def toggle_subtask_completed_section(self, index):
+        """切换主任务内已完成子任务的折叠/展开状态"""
+        if index >= len(self.display_tasks):
+            return
+        
+        task = self.display_tasks[index]
+        if not task.get('subtask_completed_header', False):
+            return
+        
+        parent_task_id = task.get('parent_task_id', '')
+        
+        if parent_task_id in self.collapsed_subtask_sections:
+            self.collapsed_subtask_sections.remove(parent_task_id)
+        else:
+            self.collapsed_subtask_sections.add(parent_task_id)
+        
+        self.listbox.selection_clear(0, tk.END)
+        self.populate_listbox_without_width_change()
+        self.save_config()
+    
     def populate_listbox_without_width_change(self):
         """重新填充列表框但不改变窗口宽度和高度"""
         self.listbox.delete(0, tk.END)
         colors = self.get_theme_colors()
         
         # 确保 self.tasks 不包含 completed_header（真实任务数据）
-        self.tasks = [task for task in self.tasks if not task.get('completed_header', False)]
+        self.tasks = [task for task in self.tasks 
+                     if not task.get('completed_header', False) 
+                     and not task.get('subtask_completed_header', False)]
         
         # 重新组织任务列表：将完成的任务移到分割线最下部，并添加折叠标题
         # organized_tasks 包含 completed_header，用于显示
@@ -1114,6 +1319,15 @@ class TodoApp:
                 done_count = task.get('done_count', 0)
                 arrow = '▶' if is_collapsed else '▼'
                 display_text = f"  {arrow} 已完成 ({done_count})"
+                self.listbox.insert(tk.END, display_text)
+                self.listbox.itemconfig(index, {'bg': '', 'fg': colors['completed_header_fg']})
+            elif task.get('subtask_completed_header', False):
+                # 子任务已完成分组的折叠/展开标题
+                ptid = task.get('parent_task_id', '')
+                is_collapsed = ptid in self.collapsed_subtask_sections
+                done_count = task.get('done_count', 0)
+                arrow = '▶' if is_collapsed else '▼'
+                display_text = f"        {arrow} 已完成子任务 ({done_count})"
                 self.listbox.insert(tk.END, display_text)
                 self.listbox.itemconfig(index, {'bg': '', 'fg': colors['completed_header_fg']})
             else:
@@ -1301,6 +1515,13 @@ class TodoApp:
             self.drag_start_index = None
             return 'break'
         
+        # 如果点击的是子任务已完成标题，切换子任务折叠状态
+        if (self.drag_start_index < len(self.display_tasks) and 
+            self.display_tasks[self.drag_start_index].get('subtask_completed_header', False)):
+            self.toggle_subtask_completed_section(self.drag_start_index)
+            self.drag_start_index = None
+            return 'break'
+        
         # 如果点击的是分割线，允许拖拽但不影响其他逻辑
         # 普通任务：正常的拖拽和选择逻辑
         self.listbox.selection_clear(0, tk.END)
@@ -1408,11 +1629,38 @@ class TodoApp:
                             'parent_task_id': task.get('parent_task_id', None),  # 父任务的task_id
                             'task_id': task.get('task_id', None),  # 任务的唯一ID
                             'custom_bg_color': task.get('custom_bg_color', '')}  # 自定义背景色
-                            for task in self.tasks if not task.get('completed_header', False)]
+                            for task in self.tasks 
+                            if not task.get('completed_header', False) 
+                            and not task.get('subtask_completed_header', False)]
 
             self.get_tasks_file().write_text(json.dumps(tasks_to_save, indent=4), encoding='utf-8')
         except Exception as e:
             print(f"Error saving tasks: {e}")
+
+    @classmethod
+    def get_notes_file(cls):
+        """获取笔记文件路径"""
+        return Path.home() / '.todo_app_notes.json'
+    
+    def load_notes(self):
+        """加载笔记"""
+        import json
+        notes_file = self.get_notes_file()
+        try:
+            return json.loads(notes_file.read_text(encoding='utf-8'))
+        except (json.JSONDecodeError, FileNotFoundError):
+            return []
+    
+    def save_notes(self):
+        """保存笔记"""
+        import json
+        try:
+            self.get_notes_file().write_text(json.dumps(self.notes, indent=4), encoding='utf-8')
+        except Exception as e:
+            print(f"Error saving notes: {e}")
+
+
+
 
 
 
@@ -1429,11 +1677,16 @@ class TodoApp:
             collapsed_list = config.get('collapsed_sections', [])
             self.collapsed_sections = set(collapsed_list)
             
+            # 加载子任务折叠状态
+            collapsed_subtask_list = config.get('collapsed_subtask_sections', [])
+            self.collapsed_subtask_sections = set(collapsed_subtask_list)
+            
             self.initial_geometry = config.get('geometry', '')
         else:
             self.initial_geometry = ''
             # 默认全部展开（空集合）
             self.collapsed_sections = set()
+            self.collapsed_subtask_sections = set()
     
     def get_all_section_ids(self):
         """获取所有分组的ID"""
@@ -1442,7 +1695,7 @@ class TodoApp:
         has_done = False
         
         for task in self.tasks:
-            if task.get('completed_header', False):
+            if task.get('completed_header', False) or task.get('subtask_completed_header', False):
                 continue
             if task.get('separator', False):
                 if has_done:
@@ -1467,7 +1720,8 @@ class TodoApp:
                 'geometry': self.root.geometry(),
                 'dark_mode': self.is_dark_mode,
                 'font_size': self.font_size,
-                'collapsed_sections': list(self.collapsed_sections)
+                'collapsed_sections': list(self.collapsed_sections),
+                'collapsed_subtask_sections': list(self.collapsed_subtask_sections)
             }
             config_file.write_text(json.dumps(config, indent=4), encoding='utf-8')
         except Exception as e:
@@ -1735,7 +1989,8 @@ class TodoApp:
             
             # 不对折叠标题显示右键菜单
             if (len(selected_indices) == 1 and index < len(self.display_tasks) and 
-                self.display_tasks[selected_indices[0]].get('completed_header', False)):
+                (self.display_tasks[selected_indices[0]].get('completed_header', False) or 
+                 self.display_tasks[selected_indices[0]].get('subtask_completed_header', False))):
                 return
             
             if len(selected_indices) == 1 and index < len(self.display_tasks) and self.display_tasks[selected_indices[0]].get('separator', False):
@@ -1762,6 +2017,7 @@ class TodoApp:
                                            index < len(self.display_tasks) and 
                                            not self.display_tasks[selected_indices[0]].get('separator', False) and
                                            not self.display_tasks[selected_indices[0]].get('completed_header', False) and
+                                           not self.display_tasks[selected_indices[0]].get('subtask_completed_header', False) and
                                            not self.display_tasks[selected_indices[0]].get('is_subtask', False))
                 
                 self.context_menu.entryconfig("标记为完成/未完成", state='disabled' if only_separators_selected else 'normal')
@@ -1804,6 +2060,7 @@ class TodoApp:
         # 不允许对分割线、折叠标题和子任务设置背景色
         if (current_task.get('separator', False) or 
             current_task.get('completed_header', False) or 
+            current_task.get('subtask_completed_header', False) or 
             current_task.get('is_subtask', False)):
             return
         
@@ -2048,7 +2305,9 @@ class TodoApp:
         current_task = self.display_tasks[index]
         
         # 不允许对分割线和折叠标题设置deadline
-        if current_task.get('separator', False) or current_task.get('completed_header', False):
+        if (current_task.get('separator', False) or 
+            current_task.get('completed_header', False) or 
+            current_task.get('subtask_completed_header', False)):
             return
         
         # 确保任务在真实列表中
@@ -2239,6 +2498,7 @@ class TodoApp:
         # 不允许对分割线、折叠标题和子任务添加子任务
         if (current_task.get('separator', False) or 
             current_task.get('completed_header', False) or 
+            current_task.get('subtask_completed_header', False) or 
             current_task.get('is_subtask', False)):
             return
         
@@ -2337,6 +2597,140 @@ class TodoApp:
         
         subtask_window.protocol("WM_DELETE_WINDOW", on_cancel)
         self.center_window_over_window(subtask_window)
+
+    # 笔记相关方法
+    
+    def populate_notes_listbox(self):
+        """填充笔记列表"""
+        self.notes_listbox.delete(0, tk.END)
+        colors = self.get_theme_colors()
+        
+        for note in self.notes:
+            self.notes_listbox.insert(tk.END, note)
+        
+        # 应用主题颜色
+        self.notes_listbox.config(bg=colors['bg'], fg=colors['fg'], 
+                                 selectbackground=colors['select_bg'])
+    
+    def add_note(self, event=None):
+        """添加新笔记"""
+        note_text = self.notes_entry.get().strip()
+        if note_text:
+            self.notes.append(note_text)
+            self.notes_entry.delete(0, tk.END)
+            self.populate_notes_listbox()
+            self.save_notes()
+    
+    def delete_selected_notes(self):
+        """删除选中的笔记"""
+        selected_indices = list(self.notes_listbox.curselection())
+        for index in reversed(selected_indices):
+            if index < len(self.notes):
+                del self.notes[index]
+        self.populate_notes_listbox()
+        self.save_notes()
+        self.update_notes_buttons_state()
+    
+    
+    def update_notes_buttons_state(self):
+        """更新笔记按钮状态"""
+        selected_count = len(self.notes_listbox.curselection())
+        
+        if selected_count == 0:
+            self.delete_note_button.config(state=tk.DISABLED)
+            self.edit_note_button.config(state=tk.DISABLED)
+        elif selected_count == 1:
+            self.delete_note_button.config(state=tk.NORMAL)
+            self.edit_note_button.config(state=tk.NORMAL)
+        else:
+            self.delete_note_button.config(state=tk.NORMAL)
+            self.edit_note_button.config(state=tk.DISABLED)
+    
+    def copy_note(self):
+        """复制选中的笔记到剪贴板"""
+        selected_indices = self.notes_listbox.curselection()
+        if len(selected_indices) != 1:
+            return
+        
+        index = selected_indices[0]
+        if index >= len(self.notes):
+            return
+        
+        note_text = self.notes[index]
+        self.root.clipboard_clear()
+        self.root.clipboard_append(note_text)
+        self.root.update()  # 确保剪贴板更新
+    
+    def edit_note_context(self):
+        """从右键菜单编辑笔记（使用对话框）"""
+        selected_indices = self.notes_listbox.curselection()
+        if len(selected_indices) != 1:
+            return
+        
+        index = selected_indices[0]
+        if index >= len(self.notes):
+            return
+        
+        current_text = self.notes[index]
+        
+        # 创建编辑对话框
+        edit_window = tk.Toplevel(self.root)
+        edit_window.title("编辑笔记")
+        edit_window.geometry("400x150")
+        edit_window.transient(self.root)
+        edit_window.grab_set()
+        
+        # 应用主题
+        colors = self.get_theme_colors()
+        edit_window.configure(bg=colors['bg'])
+        
+        # 标签
+        label = tk.Label(edit_window, text="编辑笔记内容:", bg=colors['bg'], fg=colors['fg'], 
+                        font=self.get_system_font())
+        label.pack(pady=(10, 5), padx=10, anchor='w')
+        
+        # 输入框
+        entry = tk.Entry(edit_window, font=self.get_system_font(), bg=colors['entry_bg'], 
+                        fg=colors['fg'], insertbackground=colors['caret_color'])
+        entry.pack(pady=5, padx=10, fill='x')
+        entry.insert(0, current_text)
+        entry.focus()
+        entry.select_range(0, tk.END)
+        
+        def save_edit():
+            new_text = entry.get().strip()
+            if new_text:
+                self.notes[index] = new_text
+                self.populate_notes_listbox()
+                self.save_notes()
+            edit_window.destroy()
+        
+        def cancel_edit():
+            edit_window.destroy()
+        
+        # 按钮框
+        button_frame = tk.Frame(edit_window, bg=colors['bg'])
+        button_frame.pack(pady=10)
+        
+        save_button = tk.Button(button_frame, text="保存", command=save_edit, width=8,
+                               bg=colors['button_bg'], fg=colors['button_fg'])
+        save_button.grid(row=0, column=0, padx=5)
+        
+        cancel_button = tk.Button(button_frame, text="取消", command=cancel_edit, width=8,
+                                 bg=colors['button_bg'], fg=colors['button_fg'])
+        cancel_button.grid(row=0, column=1, padx=5)
+        
+        # 绑定回车键
+        entry.bind('<Return>', lambda e: save_edit())
+        entry.bind('<Escape>', lambda e: cancel_edit())
+        edit_window.protocol("WM_DELETE_WINDOW", cancel_edit)
+        
+        self.center_window_over_window(edit_window)
+
+
+
+
+
 
 def main():
     root = tk.Tk()
