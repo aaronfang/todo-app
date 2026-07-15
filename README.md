@@ -87,7 +87,7 @@ $ cd todo-app
 3. Install dependencies:
 
 ```bash
-$ python -r requirements.txt
+$ python -m pip install -r requirements.txt
 ```
 
 4. Run the application:
@@ -96,6 +96,8 @@ $ python -r requirements.txt
 $ cd todo_app
 $ python todo_app.py
 ```
+
+macOS 用户可参考 [macOS 运行、打包与贴边隐藏说明](MACOS_GUIDE.md)，生成可从 Finder 启动的 `.app`。
 
 ## Shortcuts
 

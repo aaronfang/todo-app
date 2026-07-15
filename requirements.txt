@@ -1,2 +1,2 @@
-tkcalendar
-pywinstyles
+tkcalendar>=1.6.1
+pywinstyles; sys_platform == "win32"

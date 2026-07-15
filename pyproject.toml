@@ -12,5 +12,5 @@ authors = [
   { name = "Jens Lettkemann", email = "jltk@pm.me" }
 ]
 dependencies = [
-  "tkinter"
+  "tkcalendar>=1.6.1"
 ]

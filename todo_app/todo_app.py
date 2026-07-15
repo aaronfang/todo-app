@@ -4,6 +4,10 @@ from pathlib import Path
 import sys
 from datetime import datetime, timedelta
 try:
+    from .edge_hide import EdgeHideController
+except ImportError:  # Support `python todo_app/todo_app.py` as documented.
+    from edge_hide import EdgeHideController
+try:
     from tkcalendar import Calendar
     CALENDAR_AVAILABLE = True
 except ImportError:
@@ -38,8 +42,14 @@ class TodoApp:
 
         # 先加载配置（包括折叠状态），再设置UI
         self.load_config()
+        self.edge_hide_menu_var = tk.BooleanVar(value=self.edge_hide_enabled)
         self.setup_ui()
         self.setup_bindings()
+        self.edge_hide = EdgeHideController(
+            self.root,
+            enabled=self.edge_hide_enabled and sys.platform == "darwin",
+            on_change=self.on_edge_hide_changed,
+        )
 
         self.listbox.bind('<Button-1>', self.start_drag)
         self.listbox.bind('<B1-Motion>', self.do_drag)
@@ -73,6 +83,9 @@ class TodoApp:
             self.root.minsize(300, 100)
         self.set_window_icon()
 
+        if sys.platform == "darwin":
+            self.setup_macos_window()
+
         self.create_main_frame()
         self.create_notebook()
         self.create_tasks_tab()
@@ -86,7 +99,8 @@ class TodoApp:
 
     def create_main_frame(self):
         self.main_frame = tk.Frame(self.root)
-        self.main_frame.grid(row=0, column=0, sticky="nsew", padx=20, pady=20)
+        outer_padding = 12 if sys.platform == "darwin" else 20
+        self.main_frame.grid(row=0, column=0, sticky="nsew", padx=outer_padding, pady=outer_padding)
         self.root.grid_rowconfigure(0, weight=1)
         self.root.grid_columnconfigure(0, weight=1)
     
@@ -97,7 +111,8 @@ class TodoApp:
         colors = self.get_theme_colors()
         
         # 配置 Notebook 样式
-        style.theme_use('default')
+        available_themes = style.theme_names()
+        style.theme_use('aqua' if sys.platform == "darwin" and 'aqua' in available_themes else 'default')
         style.configure('TNotebook', background=colors['bg'], borderwidth=0)
         style.configure('TNotebook.Tab', background=colors['button_bg'], foreground=colors['button_fg'], 
                        padding=[10, 2], borderwidth=0)
@@ -145,13 +160,14 @@ class TodoApp:
         self.notes_button_frame = tk.Frame(self.notes_frame)
         self.notes_button_frame.grid(row=2, column=0, columnspan=4, sticky="ew", padx=10, pady=(0, 8))
         
-        self.add_note_button = tk.Button(self.notes_button_frame, text="添加", command=lambda: self.add_note(), width=8)
+        note_button_class = ttk.Button if sys.platform == "darwin" else tk.Button
+        self.add_note_button = note_button_class(self.notes_button_frame, text="添加", command=lambda: self.add_note(), width=8)
         self.add_note_button.grid(row=0, column=0, padx=(0, 5))
         
-        self.delete_note_button = tk.Button(self.notes_button_frame, text="删除", command=self.delete_selected_notes, width=8, state=tk.DISABLED)
+        self.delete_note_button = note_button_class(self.notes_button_frame, text="删除", command=self.delete_selected_notes, width=8, state=tk.DISABLED)
         self.delete_note_button.grid(row=0, column=1, padx=5)
         
-        self.edit_note_button = tk.Button(self.notes_button_frame, text="编辑", command=self.edit_note_context, width=8, state=tk.DISABLED)
+        self.edit_note_button = note_button_class(self.notes_button_frame, text="编辑", command=self.edit_note_context, width=8, state=tk.DISABLED)
         self.edit_note_button.grid(row=0, column=2, padx=5)
         
         # 绑定笔记列表框选择事件
@@ -251,6 +267,64 @@ class TodoApp:
 
         self.entry.bind('<Return>', self.add_task)
         self.entry.bind('<KeyRelease>', self.update_buttons_state)
+
+        if sys.platform == "darwin":
+            self.setup_macos_bindings()
+
+    def setup_macos_window(self):
+        """Use the system title bar and a conventional macOS application menu."""
+        # Route Dock/Finder/Apple Event quits through the normal save path.
+        self.root.createcommand('::tk::mac::Quit', self.on_close)
+        # Tk's default macOS window already uses the native document style.
+        # MacWindowStyle is a private API and can silently disable resizing on
+        # newer Tk/macOS combinations, so keep the supported window defaults.
+        self.root.resizable(True, True)
+
+        menu_bar = tk.Menu(self.root)
+        app_menu = tk.Menu(menu_bar, tearoff=0)
+        app_menu.add_command(label="关于 To-Do", command=self.show_about_dialog)
+        app_menu.add_separator()
+        app_menu.add_command(label="退出 To-Do", accelerator="⌘Q", command=self.on_close)
+        menu_bar.add_cascade(label="To-Do", menu=app_menu)
+
+        view_menu = tk.Menu(menu_bar, tearoff=0)
+        view_menu.add_command(label="切换外观", accelerator="⌘⇧D", command=self.toggle_dark_mode)
+        view_menu.add_checkbutton(
+            label="贴边自动隐藏",
+            variable=self.edge_hide_menu_var,
+            command=self.toggle_edge_hide,
+        )
+        menu_bar.add_cascade(label="显示", menu=view_menu)
+        self.root.configure(menu=menu_bar)
+
+    def setup_macos_bindings(self):
+        """Map common actions to Command while retaining legacy Control bindings."""
+        bindings = {
+            '<Command-a>': self.select_all_or_text,
+            '<Command-e>': self.edit_task_shortcut,
+            '<Command-u>': self.toggle_urgent_task,
+            '<Command-d>': self.mark_selected_tasks_done,
+            '<Command-s>': self.add_subtask_shortcut,
+            '<Command-plus>': self.increase_font_size,
+            '<Command-equal>': self.increase_font_size,
+            '<Command-minus>': self.decrease_font_size,
+            '<Command-0>': self.reset_font_size,
+            '<Command-Shift-d>': self.toggle_dark_mode,
+            '<Command-q>': lambda _event: self.on_close(),
+        }
+        for sequence, callback in bindings.items():
+            self.root.bind_all(sequence, callback)
+
+        self.listbox.bind('<BackSpace>', self.remove_selected_tasks)
+
+    def toggle_edge_hide(self):
+        if hasattr(self, 'edge_hide'):
+            self.edge_hide.set_enabled(bool(self.edge_hide_menu_var.get()))
+
+    def on_edge_hide_changed(self, enabled):
+        self.edge_hide_enabled = bool(enabled)
+        self.edge_hide_menu_var.set(self.edge_hide_enabled)
+        self.save_config()
 
     def create_context_menu(self):
         self.context_menu = tk.Menu(self.root, tearoff=0)
@@ -367,7 +441,15 @@ class TodoApp:
                 else:
                     self.tasks.append({'name': '─' * 40, 'separator': True, 'title': False})
             else:
-                self.tasks.append({'name': task_name})
+                import uuid
+                self.tasks.append({
+                    'name': task_name,
+                    'done': False,
+                    'cancelled': False,
+                    'urgent': False,
+                    'separator': False,
+                    'task_id': str(uuid.uuid4()),
+                })
             # 添加任务时保持窗口尺寸不变
             self.populate_listbox_without_width_change()
             self.save_tasks()
@@ -970,28 +1052,24 @@ class TodoApp:
         
         # 根据平台调整按钮样式
         if sys.platform == "darwin":  # macOS
-            style.configure('TButton', 
-                          background=bg, 
-                          foreground=fg, 
-                          padding=(2, 1),  # 非常紧凑的padding
-                          relief='flat',
-                          borderwidth=1,
-                          width=1,  # 最小宽度
-                          font=self.get_system_font())  # 使用系统字体
+            # Let Aqua draw the button surface, focus ring and disabled state.
+            style.configure('TButton', padding=(4, 2), font=self.get_system_font())
         else:  # Windows和其他系统
             style.configure('TButton', 
                           background=bg, 
                           foreground=fg, 
                           padding=5)
         
-        style.map('TButton', 
-                background=[('active', bg), ('disabled', '#666666' if self.is_dark_mode else '#c0c0c0')],
-                foreground=[('active', fg), ('disabled', 'grey')])
+        if sys.platform != "darwin":
+            style.map('TButton',
+                    background=[('active', bg), ('disabled', '#666666' if self.is_dark_mode else '#c0c0c0')],
+                    foreground=[('active', fg), ('disabled', 'grey')])
         
         # 更新笔记按钮的样式
         colors = self.get_theme_colors()
-        for button in [self.add_note_button, self.delete_note_button, self.edit_note_button]:
-            button.config(bg=bg, fg=fg, activebackground=bg, activeforeground=fg)
+        if sys.platform != "darwin":
+            for button in [self.add_note_button, self.delete_note_button, self.edit_note_button]:
+                button.config(bg=bg, fg=fg, activebackground=bg, activeforeground=fg)
 
     def update_listbox_task_backgrounds(self):
         colors = self.get_theme_colors()
@@ -1682,8 +1760,10 @@ class TodoApp:
             self.collapsed_subtask_sections = set(collapsed_subtask_list)
             
             self.initial_geometry = config.get('geometry', '')
+            self.edge_hide_enabled = config.get('edge_hide', sys.platform == "darwin")
         else:
             self.initial_geometry = ''
+            self.edge_hide_enabled = sys.platform == "darwin"
             # 默认全部展开（空集合）
             self.collapsed_sections = set()
             self.collapsed_subtask_sections = set()
@@ -1716,10 +1796,15 @@ class TodoApp:
         try:
             config_file = self.get_config_file()
             config_file.parent.mkdir(parents=True, exist_ok=True)
+            geometry = (
+                self.edge_hide.geometry_for_save()
+                if hasattr(self, 'edge_hide') else self.root.geometry()
+            )
             config = {
-                'geometry': self.root.geometry(),
+                'geometry': geometry,
                 'dark_mode': self.is_dark_mode,
                 'font_size': self.font_size,
+                'edge_hide': self.edge_hide_enabled,
                 'collapsed_sections': list(self.collapsed_sections),
                 'collapsed_subtask_sections': list(self.collapsed_subtask_sections)
             }
@@ -1734,12 +1819,19 @@ class TodoApp:
         return Path(sys.executable).parent if getattr(sys, 'frozen', False) else Path(__file__).parent
 
     @classmethod
+    def get_data_dir(cls):
+        """Return a writable data directory for a bundled macOS application."""
+        if sys.platform == "darwin" and getattr(sys, 'frozen', False):
+            return Path.home() / 'Library' / 'Application Support' / 'TodoApp'
+        return cls.get_base_dir() / 'todo_app'
+
+    @classmethod
     def get_tasks_file(cls):
-        return cls.get_base_dir() / 'todo_app' / 'tasks.json'
+        return cls.get_data_dir() / 'tasks.json'
 
     @classmethod
     def get_config_file(cls):
-        return cls.get_base_dir() / 'todo_app' / 'config.json'
+        return cls.get_data_dir() / 'config.json'
 
     def get_theme_colors(self):
         if sys.platform == "darwin":  # macOS特定颜色
