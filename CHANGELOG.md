@@ -2,6 +2,18 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.1] - 2026-08-04
+
+### Added
+- Added GUI template management for creating, editing, deleting, and reordering multiple templates.
+- Added manual template application from a main task's right-click menu.
+- Added JSON template import/export for sharing templates across computers.
+- Moved the default SO-Character template to external `default_templates.json` data.
+
+### Fixed
+- Fixed Windows PyInstaller builds failing to import `edge_hide` at startup.
+- Included external default template data in Windows packaging.
+
 ## [1.0.0] - 2026-02-10
 
 ### 🎉 Major Release - Enhanced Fork

@@ -32,12 +32,12 @@ python build_exe.py
 release/
 ├── TodoApp.exe                                  # ← 这就是可分发的程序！
 ├── README_便携版.txt                            # 用户使用说明
-└── TodoApp_v1.0.0_Portable_Windows.zip         # ← 可直接发布！
+└── TodoApp_v1.0.1_Portable_Windows.zip         # ← 可直接发布！
 ```
 
 ## 🎁 分发给用户
 
-1. 上传 `TodoApp_v1.0.0_Portable_Windows.zip` 到 GitHub Release
+1. 上传 `TodoApp_v1.0.1_Portable_Windows.zip` 到 GitHub Release
 2. 用户下载解压后，双击 `TodoApp.exe` 即可使用
 3. **无需安装 Python**，开箱即用！
 
@@ -50,7 +50,7 @@ release/
 pip install pyinstaller
 
 # 2. 一键构建
-pyinstaller --onefile --windowed --name=TodoApp --icon=todo_app/app_icon.ico --add-data="todo_app/app_icon.ico;." --add-data="todo_app/app_logo.png;." --hidden-import=tkcalendar --hidden-import=pywinstyles todo_app/todo_app.py
+pyinstaller --onefile --windowed --name=TodoApp --icon=todo_app/app_icon.ico --paths=todo_app --add-data="todo_app/app_icon.ico;." --add-data="todo_app/app_logo.png;." --add-data="todo_app/default_templates.json;." --hidden-import=edge_hide --hidden-import=tkcalendar --hidden-import=pywinstyles todo_app/todo_app.py
 
 # 3. 完成！EXE 位于: dist/TodoApp.exe
 ```

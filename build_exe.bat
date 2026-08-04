@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 echo ========================================
-echo   Todo App v1.0.0 - 单文件 EXE 构建器
+echo   Todo App v1.0.1 - 单文件 EXE 构建器
 echo ========================================
 echo.
 
@@ -18,7 +18,7 @@ if %ERRORLEVEL% EQU 0 (
     echo.
     echo 📦 发布文件位于: release\
     echo    - TodoApp.exe
-    echo    - TodoApp_v1.0.0_Portable_Windows.zip
+    echo    - TodoApp_v1.0.1_Portable_Windows.zip
     echo.
 ) else (
     echo.

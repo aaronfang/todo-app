@@ -2,7 +2,7 @@ from .todo_app import TodoApp
 
 __all__ = ['TodoApp']
 
-__version__ = '1.0.0'
+__version__ = '1.0.1'
 __author__ = 'Jens Lettkemann'
 __email__ = 'jltk@pm.me'
 __license__ = 'GPLv3+'

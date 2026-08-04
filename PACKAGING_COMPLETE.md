@@ -51,7 +51,7 @@ python build_exe.py
 ### 方法 3: 手动命令
 ```bash
 pip install pyinstaller
-pyinstaller --onefile --windowed --name=TodoApp --icon=todo_app/app_icon.ico --add-data="todo_app/app_icon.ico;." --add-data="todo_app/app_logo.png;." --hidden-import=tkcalendar --hidden-import=pywinstyles todo_app/todo_app.py
+pyinstaller --onefile --windowed --name=TodoApp --icon=todo_app/app_icon.ico --paths=todo_app --add-data="todo_app/app_icon.ico;." --add-data="todo_app/app_logo.png;." --add-data="todo_app/default_templates.json;." --hidden-import=edge_hide --hidden-import=tkcalendar --hidden-import=pywinstyles todo_app/todo_app.py
 ```
 
 ---
@@ -96,7 +96,7 @@ release/
 │   └── 功能介绍
 │   └── 数据存储位置
 │
-└── TodoApp_v1.0.0_Portable_Windows.zip         # 发布压缩包
+└── TodoApp_v1.0.1_Portable_Windows.zip         # 发布压缩包
     └── 包含上述两个文件
     └── 可直接上传到 GitHub Release
     └── 大小: ~6-8 MB（压缩后）
@@ -106,7 +106,7 @@ release/
 
 ## 🎁 用户使用流程
 
-1. **下载** `TodoApp_v1.0.0_Portable_Windows.zip`
+1. **下载** `TodoApp_v1.0.1_Portable_Windows.zip`
 2. **解压**到任意位置
 3. **双击** `TodoApp.exe`
 4. **开始使用**，数据自动保存在同目录
@@ -174,7 +174,7 @@ release/
 - [x] 网络连接正常（首次需下载 PyInstaller）
 - [x] 磁盘空间充足（至少 500MB）
 - [x] 应用已测试所有功能正常
-- [x] 版本号已更新（当前 v1.0.0）
+- [x] 版本号已更新（当前 v1.0.1）
 - [x] 图标文件存在（app_icon.ico, app_logo.png）
 
 ---
@@ -253,20 +253,20 @@ python build_exe.py
 # 3. 创建 GitHub Release
 # 在 GitHub 网页操作：
 # - Releases → New Release
-# - Tag: v1.0.0
-# - Title: "Todo App v1.0.0 - Feature-Rich Task Manager"
-# - 上传: release/TodoApp_v1.0.0_Portable_Windows.zip
+# - Tag: v1.0.1
+# - Title: "Todo App v1.0.1 - Feature-Rich Task Manager"
+# - 上传: release/TodoApp_v1.0.1_Portable_Windows.zip
 # - 描述: 复制 CHANGELOG.md 中的内容
 ```
 
 ### Release 说明模板
 
 ```markdown
-# Todo App v1.0.0 - Enhanced Fork
+# Todo App v1.0.1 - Enhanced Fork
 
 ## 📦 下载
 
-- **Windows 便携版**: TodoApp_v1.0.0_Portable_Windows.zip (6-8 MB)
+- **Windows 便携版**: TodoApp_v1.0.1_Portable_Windows.zip (6-8 MB)
   - 无需安装，解压即用
   - 包含完整功能
   - 适用于 Windows 7/8/10/11 (64位)

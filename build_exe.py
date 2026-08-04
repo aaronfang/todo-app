@@ -81,10 +81,13 @@ def build_exe():
         '--windowed',                                   # 无控制台窗口
         '--name=TodoApp',                               # 输出文件名
         '--icon=todo_app/app_icon.ico',                # 应用图标
+        '--paths=todo_app',                             # 查找同目录模块
         '--add-data=todo_app/app_icon.ico;.',          # 包含图标
         '--add-data=todo_app/app_logo.png;.',          # 包含 Logo
+        '--add-data=todo_app/default_templates.json;.', # 包含默认模板
         '--hidden-import=tkinter',                      # 确保包含 tkinter
         '--hidden-import=tkinter.ttk',                  # 确保包含 ttk
+        '--hidden-import=edge_hide',                    # 确保包含贴边隐藏模块
         '--hidden-import=tkcalendar',                   # 可选依赖
         '--hidden-import=pywinstyles',                  # 可选依赖
         '--collect-all=tkcalendar',                     # 收集 tkcalendar 所有文件
@@ -129,7 +132,7 @@ def create_portable_package():
     print(f"✓ 已复制到 {target_exe}")
     
     # 创建 README
-    readme_content = """# Todo App v1.0.0 - 便携版
+    readme_content = """# Todo App v1.0.1 - 便携版
 
 ## 📦 使用说明
 
@@ -145,6 +148,9 @@ def create_portable_package():
 
 - `todo_app/tasks.json` - 您的任务数据
 - `todo_app/config.json` - 应用设置（暗色模式、字体大小等）
+- `todo_app/templates.json` - 用户模板数据
+
+模板也可以在“模板管理”中导出为 JSON，再在另一台电脑导入。
 
 ### ⌨️ 快捷键
 
@@ -189,10 +195,10 @@ def create_portable_package():
 
 ---
 
-**版本**: v1.0.0  
-**构建日期**: 2026-02-10  
-**原作者**: Jens Lettkemann  
-**增强版**: Aaron  
+**版本**: v1.0.1
+**构建日期**: 2026-08-04
+**原作者**: Jens Lettkemann
+**增强版**: Aaron
 """
     
     readme_file = release_dir / 'README_便携版.txt'
@@ -204,7 +210,7 @@ def create_portable_package():
     try:
         import zipfile
         
-        zip_name = f'TodoApp_v1.0.0_Portable_Windows.zip'
+        zip_name = f'TodoApp_v1.0.1_Portable_Windows.zip'
         zip_path = Path('release') / zip_name
         
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
@@ -223,7 +229,7 @@ def create_portable_package():
 def main():
     """主函数"""
     print("=" * 60)
-    print("Todo App v1.0.0 - 单文件 EXE 构建脚本")
+    print("Todo App v1.0.1 - 单文件 EXE 构建脚本")
     print("=" * 60)
     
     # 检查环境
@@ -255,7 +261,7 @@ def main():
         print("=" * 60)
         print("\n📦 发布文件:")
         print("  - release/TodoApp.exe")
-        print("  - release/TodoApp_v1.0.0_Portable_Windows.zip")
+        print("  - release/TodoApp_v1.0.1_Portable_Windows.zip")
         print("\n📝 使用说明:")
         print("  - 解压 ZIP 文件")
         print("  - 双击 TodoApp.exe 运行")

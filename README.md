@@ -64,7 +64,7 @@ Free and open-source alternative to Microsoft To Do with advanced task managemen
 
 ## Installation
 
-### Download Portable .EXE for Windows 10/11: [🔗 To-Do_Portable_1.0.0.zip](https://github.com/jltk/todo-app/releases/download/1.0.0/To-Do_Portable_1.0.0.zip)
+### Download Portable .EXE for Windows 10/11: [🔗 TodoApp_v1.0.1_Portable_Windows.zip](https://github.com/aaronfang/todo-app/releases/download/v1.0.1/TodoApp_v1.0.1_Portable_Windows.zip)
 
 or [visit the release page](https://github.com/jltk/todo-app/releases). 
 

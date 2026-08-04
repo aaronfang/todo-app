@@ -40,14 +40,14 @@ python build_exe.py
 ```
 release/
 ├── TodoApp.exe                                  ← 可执行程序
-└── TodoApp_v1.0.0_Portable_Windows.zip         ← 可分发文件
+└── TodoApp_v1.0.1_Portable_Windows.zip         ← 可分发文件
 ```
 
 ---
 
 ## 🎁 分发给用户
 
-把 `TodoApp_v1.0.0_Portable_Windows.zip` 发给用户即可：
+把 `TodoApp_v1.0.1_Portable_Windows.zip` 发给用户即可：
 
 1. 📥 用户下载 ZIP
 2. 📂 解压到任意位置
@@ -110,7 +110,7 @@ C:\Python314\python.exe build_exe.py
 双击 build_exe.bat → 等待 1-3 分钟 → 完成！
 ```
 
-生成的 `release/TodoApp_v1.0.0_Portable_Windows.zip` 就是最终产品！
+生成的 `release/TodoApp_v1.0.1_Portable_Windows.zip` 就是最终产品！
 
 ---
 

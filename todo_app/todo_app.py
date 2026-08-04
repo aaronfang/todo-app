@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk
+from tkinter import ttk, messagebox, filedialog
 from pathlib import Path
 import sys
 from datetime import datetime, timedelta
@@ -26,6 +26,7 @@ class TodoApp:
         self.font_size = 13 if sys.platform == "darwin" else 10  # 默认字体大小
         self.tasks = self.load_tasks()  # 真实的任务数据（不包含 completed_header）
         self.notes = self.load_notes()  # 笔记数据
+        self.templates = self.load_templates()  # 用户可管理的子任务模板
         
         # 确保所有任务都有task_id，并修复父子关系
         self.ensure_task_ids()
@@ -71,6 +72,77 @@ class TodoApp:
         # 如果添加了新的task_id，保存一次
         if needs_save:
             self.save_tasks()
+
+
+    def apply_template_to_selected_task(self, template):
+        selected_indices = self.listbox.curselection()
+        if len(selected_indices) != 1:
+            return
+
+        index = selected_indices[0]
+        if index >= len(self.display_tasks):
+            return
+        parent_task = self.display_tasks[index]
+        if (parent_task.get('separator', False) or
+                parent_task.get('completed_header', False) or
+                parent_task.get('subtask_completed_header', False) or
+                parent_task.get('is_subtask', False) or
+                parent_task not in self.tasks):
+            return
+
+        existing_subtasks = [
+            task for task in self.tasks
+            if task.get('is_subtask', False) and
+            task.get('parent_task_id') == parent_task.get('task_id')
+        ]
+        if existing_subtasks and not messagebox.askyesno(
+                '应用模板',
+                f'该任务已有 {len(existing_subtasks)} 个子任务，是否继续追加模板？',
+                parent=self.root):
+            return
+
+        self.add_template_subtasks(parent_task, template.get('subtasks', []))
+        self.populate_listbox_without_width_change()
+        self.save_tasks()
+        self.update_buttons_state()
+        self.update_title()
+
+    def add_template_subtasks(self, parent_task, subtask_names):
+        import uuid
+
+        parent_task_id = parent_task.get('task_id')
+        if not parent_task_id:
+            parent_task_id = str(uuid.uuid4())
+            parent_task['task_id'] = parent_task_id
+
+        subtasks = []
+        for name in subtask_names:
+            name = str(name).strip()
+            if not name:
+                continue
+            subtasks.append({
+                'name': name,
+                'done': False,
+                'cancelled': False,
+                'urgent': False,
+                'separator': False,
+                'is_subtask': True,
+                'parent_task_id': parent_task_id,
+                'task_id': str(uuid.uuid4()),
+            })
+
+        if not subtasks:
+            return
+
+        parent_index = self.tasks.index(parent_task)
+        insert_index = parent_index + 1
+        for index in range(parent_index + 1, len(self.tasks)):
+            task = self.tasks[index]
+            if not task.get('is_subtask', False) or task.get('separator', False):
+                break
+            if task.get('parent_task_id') == parent_task_id:
+                insert_index = index + 1
+        self.tasks[insert_index:insert_index] = subtasks
 
     # Setup methods
 
@@ -333,6 +405,10 @@ class TodoApp:
         self.context_menu.add_command(label="设置背景颜色", command=self.set_task_background_color_shortcut)
         self.context_menu.add_command(label="添加子任务", command=self.add_subtask_shortcut)
         self.context_menu.add_separator()
+        self.apply_template_menu = tk.Menu(self.context_menu, tearoff=0)
+        self.context_menu.add_cascade(label="应用模板", menu=self.apply_template_menu)
+        self.context_menu.add_command(label="模板管理", command=self.manage_templates)
+        self.context_menu.add_separator()
         self.context_menu.add_command(label="标记为完成/未完成", command=self.mark_selected_tasks_done)
         self.context_menu.add_command(label="标记为紧急/取消紧急", command=self.toggle_urgent_task)
         self.context_menu.add_command(label="标记为取消/恢复", command=self.mark_selected_tasks_cancelled)
@@ -442,14 +518,15 @@ class TodoApp:
                     self.tasks.append({'name': '─' * 40, 'separator': True, 'title': False})
             else:
                 import uuid
-                self.tasks.append({
+                task = {
                     'name': task_name,
                     'done': False,
                     'cancelled': False,
                     'urgent': False,
                     'separator': False,
                     'task_id': str(uuid.uuid4()),
-                })
+                }
+                self.tasks.append(task)
             # 添加任务时保持窗口尺寸不变
             self.populate_listbox_without_width_change()
             self.save_tasks()
@@ -1646,6 +1723,57 @@ class TodoApp:
 
     # File I/O and configuration
 
+    @staticmethod
+    def normalize_templates(templates):
+        if isinstance(templates, dict):
+            templates = templates.get('templates', [])
+        if not isinstance(templates, list):
+            return []
+
+        normalized = []
+        for template in templates:
+            if not isinstance(template, dict):
+                continue
+            name = str(template.get('name', '')).strip()
+            subtasks = template.get('subtasks', [])
+            if not name or not isinstance(subtasks, list):
+                continue
+            normalized.append({
+                'template_id': str(template.get('template_id', '')),
+                'name': name,
+                'subtasks': [str(item).strip() for item in subtasks if str(item).strip()],
+            })
+        return normalized
+
+    @classmethod
+    def get_bundled_templates_file(cls):
+        return Path(__file__).parent / 'default_templates.json'
+
+    def load_templates_from_file(self, templates_file):
+        import json
+
+        try:
+            data = json.loads(templates_file.read_text(encoding='utf-8'))
+        except (FileNotFoundError, json.JSONDecodeError, OSError):
+            return []
+        return self.normalize_templates(data)
+
+    def load_templates(self):
+        templates_file = self.get_templates_file()
+        if templates_file.is_file():
+            return self.load_templates_from_file(templates_file)
+        return self.load_templates_from_file(self.get_bundled_templates_file())
+
+    def save_templates(self):
+        import json
+
+        try:
+            templates_file = self.get_templates_file()
+            templates_file.parent.mkdir(parents=True, exist_ok=True)
+            templates_file.write_text(json.dumps(self.templates, indent=4, ensure_ascii=False), encoding='utf-8')
+        except OSError as error:
+            print(f"Error saving templates: {error}")
+
     @classmethod
     def load_tasks(cls):
         import json
@@ -1832,6 +1960,10 @@ class TodoApp:
     @classmethod
     def get_config_file(cls):
         return cls.get_data_dir() / 'config.json'
+
+    @classmethod
+    def get_templates_file(cls):
+        return cls.get_data_dir() / 'templates.json'
 
     def get_theme_colors(self):
         if sys.platform == "darwin":  # macOS特定颜色
@@ -2035,7 +2167,7 @@ class TodoApp:
             icon_label.pack(pady=(5, 5))
 
         about_text = (
-            "To-Do App v1.0.0\n\n"
+            "To-Do App v1.0.1\n\n"
             "Original: © 2024 Jens Lettkemann <jltk@pm.me>\n"
             "Enhanced Fork: © 2026 Aaron\n\n"
             "This software is licensed under GPLv3+.\n"
@@ -2067,6 +2199,277 @@ class TodoApp:
     def open_link(self, url):
         import webbrowser
         webbrowser.open(url)
+
+    def refresh_apply_template_menu(self):
+        self.apply_template_menu.delete(0, tk.END)
+        if not self.templates:
+            self.apply_template_menu.add_command(label="暂无模板", state='disabled')
+            return
+        for template in self.templates:
+            self.apply_template_menu.add_command(
+                label=template['name'],
+                command=lambda selected_template=template: self.apply_template_to_selected_task(selected_template),
+            )
+
+    def export_templates(self):
+        import json
+
+        target = filedialog.asksaveasfilename(
+            parent=self.root,
+            title='导出模板',
+            defaultextension='.json',
+            initialfile='templates.json',
+            filetypes=[('JSON 文件', '*.json'), ('所有文件', '*.*')],
+        )
+        if not target:
+            return
+        try:
+            Path(target).write_text(
+                json.dumps(self.templates, indent=4, ensure_ascii=False),
+                encoding='utf-8',
+            )
+        except OSError as error:
+            messagebox.showerror('导出模板失败', str(error), parent=self.root)
+            return
+        messagebox.showinfo('导出模板', f'已导出 {len(self.templates)} 个模板。', parent=self.root)
+
+    def import_templates(self, on_updated=None):
+        import json
+        import uuid
+
+        source = filedialog.askopenfilename(
+            parent=self.root,
+            title='导入模板',
+            filetypes=[('JSON 文件', '*.json'), ('所有文件', '*.*')],
+        )
+        if not source:
+            return
+        try:
+            data = json.loads(Path(source).read_text(encoding='utf-8'))
+        except (OSError, json.JSONDecodeError) as error:
+            messagebox.showerror('导入模板失败', str(error), parent=self.root)
+            return
+
+        imported = self.normalize_templates(data)
+        if not imported:
+            messagebox.showwarning('导入模板', '文件中没有有效模板。', parent=self.root)
+            return
+
+        existing_by_name = {
+            template['name'].casefold(): index
+            for index, template in enumerate(self.templates)
+        }
+        replaced_count = 0
+        added_count = 0
+        for template in imported:
+            if not template['template_id']:
+                template['template_id'] = str(uuid.uuid4())
+            key = template['name'].casefold()
+            if key in existing_by_name:
+                self.templates[existing_by_name[key]] = template
+                replaced_count += 1
+            else:
+                existing_by_name[key] = len(self.templates)
+                self.templates.append(template)
+                added_count += 1
+
+        self.save_templates()
+        self.refresh_apply_template_menu()
+        if on_updated:
+            on_updated()
+        messagebox.showinfo(
+            '导入模板',
+            f'已导入 {added_count} 个新模板，更新 {replaced_count} 个同名模板。',
+            parent=self.root,
+        )
+
+    def manage_templates(self):
+        import uuid
+
+        template_window = tk.Toplevel(self.root)
+        template_window.title("模板管理")
+        template_window.geometry("650x460")
+        template_window.minsize(560, 360)
+        template_window.transient(self.root)
+        template_window.grab_set()
+        self.set_window_icon(template_window)
+        self.apply_title_bar_color(template_window)
+
+        frame = tk.Frame(template_window, padx=12, pady=12)
+        frame.pack(fill="both", expand=True)
+        frame.grid_rowconfigure(1, weight=1)
+        frame.grid_columnconfigure(0, weight=1)
+        frame.grid_columnconfigure(1, weight=2)
+
+        tk.Label(frame, text="模板列表").grid(row=0, column=0, sticky="w", pady=(0, 5))
+        tk.Label(frame, text="模板内容").grid(row=0, column=1, sticky="w", padx=(12, 0), pady=(0, 5))
+
+        template_list = tk.Listbox(frame, exportselection=False)
+        template_list.grid(row=1, column=0, sticky="nsew")
+        editor = tk.Frame(frame)
+        editor.grid(row=1, column=1, sticky="nsew", padx=(12, 0))
+        editor.grid_rowconfigure(3, weight=1)
+        editor.grid_columnconfigure(0, weight=1)
+
+        name_var = tk.StringVar()
+        tk.Label(editor, text="模板名称").grid(row=0, column=0, sticky="w")
+        name_entry = tk.Entry(editor, textvariable=name_var)
+        name_entry.grid(row=1, column=0, sticky="ew", pady=(3, 12))
+
+        tk.Label(editor, text="子任务列表").grid(row=2, column=0, sticky="w")
+        subtask_list = tk.Listbox(editor, exportselection=False)
+        subtask_list.grid(row=3, column=0, sticky="nsew", pady=(3, 5))
+
+        subtask_input_frame = tk.Frame(editor)
+        subtask_input_frame.grid(row=4, column=0, sticky="ew", pady=(0, 5))
+        subtask_input_frame.grid_columnconfigure(0, weight=1)
+        subtask_entry = tk.Entry(subtask_input_frame)
+        subtask_entry.grid(row=0, column=0, sticky="ew")
+
+        state = {'index': None, 'subtasks': []}
+
+        def refresh_template_list(select_index=None):
+            template_list.delete(0, tk.END)
+            for template in self.templates:
+                template_list.insert(tk.END, template['name'])
+            if select_index is not None and 0 <= select_index < len(self.templates):
+                template_list.selection_set(select_index)
+                template_list.activate(select_index)
+
+        def refresh_subtask_list():
+            subtask_list.delete(0, tk.END)
+            for index, name in enumerate(state['subtasks'], start=1):
+                subtask_list.insert(tk.END, f"{index}. {name}")
+
+        def load_template(index):
+            if index is None:
+                state['index'] = None
+                state['subtasks'] = []
+                name_var.set("")
+                template_list.selection_clear(0, tk.END)
+            else:
+                state['index'] = index
+                state['subtasks'] = list(self.templates[index].get('subtasks', []))
+                name_var.set(self.templates[index]['name'])
+            refresh_subtask_list()
+            subtask_entry.delete(0, tk.END)
+
+        def on_template_select(event=None):
+            selection = template_list.curselection()
+            if selection:
+                load_template(selection[0])
+
+        def add_or_update_subtask(event=None):
+            name = subtask_entry.get().strip()
+            if not name:
+                return
+            selection = subtask_list.curselection()
+            if selection:
+                state['subtasks'][selection[0]] = name
+            else:
+                state['subtasks'].append(name)
+            refresh_subtask_list()
+            subtask_entry.delete(0, tk.END)
+
+        def delete_subtask():
+            selection = subtask_list.curselection()
+            if selection:
+                state['subtasks'].pop(selection[0])
+                refresh_subtask_list()
+
+        def move_subtask(offset):
+            selection = subtask_list.curselection()
+            if not selection:
+                return
+            old_index = selection[0]
+            new_index = old_index + offset
+            if not 0 <= new_index < len(state['subtasks']):
+                return
+            state['subtasks'][old_index], state['subtasks'][new_index] = (
+                state['subtasks'][new_index], state['subtasks'][old_index])
+            refresh_subtask_list()
+            subtask_list.selection_set(new_index)
+
+        def new_template():
+            load_template(None)
+            name_entry.focus_set()
+
+        def save_template():
+            name = name_var.get().strip()
+            if not name:
+                messagebox.showwarning('模板管理', '请输入模板名称。', parent=template_window)
+                return
+            if not state['subtasks']:
+                messagebox.showwarning('模板管理', '请至少添加一个子任务。', parent=template_window)
+                return
+            for index, template in enumerate(self.templates):
+                if index != state['index'] and template['name'].casefold() == name.casefold():
+                    messagebox.showwarning('模板管理', '模板名称不能重复。', parent=template_window)
+                    return
+
+            if state['index'] is None:
+                self.templates.append({
+                    'template_id': str(uuid.uuid4()),
+                    'name': name,
+                    'subtasks': list(state['subtasks']),
+                })
+                state['index'] = len(self.templates) - 1
+            else:
+                self.templates[state['index']]['name'] = name
+                self.templates[state['index']]['subtasks'] = list(state['subtasks'])
+            self.save_templates()
+            refresh_template_list(state['index'])
+            self.refresh_apply_template_menu()
+
+        def delete_template():
+            if state['index'] is None:
+                return
+            if not messagebox.askyesno(
+                    '删除模板', f'确定删除模板“{self.templates[state["index"]]["name"]}”吗？',
+                    parent=template_window):
+                return
+            self.templates.pop(state['index'])
+            self.save_templates()
+            self.refresh_apply_template_menu()
+            if self.templates:
+                load_template(0)
+                refresh_template_list(0)
+            else:
+                load_template(None)
+                refresh_template_list()
+
+        def refresh_after_import():
+            if self.templates:
+                load_template(0)
+                refresh_template_list(0)
+            else:
+                load_template(None)
+                refresh_template_list()
+
+        template_list.bind('<<ListboxSelect>>', on_template_select)
+        subtask_entry.bind('<Return>', add_or_update_subtask)
+
+        subtask_buttons = tk.Frame(editor)
+        subtask_buttons.grid(row=5, column=0, sticky="ew", pady=(0, 10))
+        ttk.Button(subtask_buttons, text="添加/修改", command=add_or_update_subtask).pack(side="left")
+        ttk.Button(subtask_buttons, text="删除", command=delete_subtask).pack(side="left", padx=5)
+        ttk.Button(subtask_buttons, text="上移", command=lambda: move_subtask(-1)).pack(side="left")
+        ttk.Button(subtask_buttons, text="下移", command=lambda: move_subtask(1)).pack(side="left", padx=5)
+
+        template_buttons = tk.Frame(frame)
+        template_buttons.grid(row=2, column=0, columnspan=2, sticky="ew", pady=(12, 0))
+        ttk.Button(template_buttons, text="新建模板", command=new_template).pack(side="left")
+        ttk.Button(template_buttons, text="保存模板", command=save_template).pack(side="left", padx=5)
+        ttk.Button(template_buttons, text="删除模板", command=delete_template).pack(side="left")
+        ttk.Button(template_buttons, text="导入模板", command=lambda: self.import_templates(refresh_after_import)).pack(side="left", padx=(12, 0))
+        ttk.Button(template_buttons, text="导出模板", command=self.export_templates).pack(side="left", padx=5)
+        ttk.Button(template_buttons, text="关闭", command=template_window.destroy).pack(side="right")
+
+        refresh_template_list()
+        if self.templates:
+            load_template(0)
+            template_list.selection_set(0)
+        self.center_window_over_window(template_window)
 
     def show_context_menu(self, event):
         try:
@@ -2112,8 +2515,13 @@ class TodoApp:
                                            not self.display_tasks[selected_indices[0]].get('subtask_completed_header', False) and
                                            not self.display_tasks[selected_indices[0]].get('is_subtask', False))
                 
+                self.refresh_apply_template_menu()
                 self.context_menu.entryconfig("标记为完成/未完成", state='disabled' if only_separators_selected else 'normal')
                 self.context_menu.entryconfig("添加子任务", state='normal' if single_main_task_selected else 'disabled')
+                self.context_menu.entryconfig(
+                    "应用模板",
+                    state='normal' if single_main_task_selected and self.templates else 'disabled',
+                )
                 self.context_menu.tk_popup(event.x_root, event.y_root)
         finally:
             self.context_menu.grab_release()

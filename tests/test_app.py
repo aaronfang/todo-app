@@ -18,6 +18,7 @@ class TestTodoApp(unittest.TestCase):
             patch.object(TodoApp, 'get_tasks_file', return_value=data_dir / 'tasks.json'),
             patch.object(TodoApp, 'get_notes_file', return_value=data_dir / 'notes.json'),
             patch.object(TodoApp, 'get_config_file', return_value=data_dir / 'config.json'),
+            patch.object(TodoApp, 'get_templates_file', return_value=data_dir / 'templates.json'),
         ]
         for patcher in self.file_patchers:
             patcher.start()
@@ -47,6 +48,17 @@ class TestTodoApp(unittest.TestCase):
         self.assertTrue(tasks[1]['urgent'])
         self.assertTrue(tasks[2]['separator'])
 
+    def test_load_templates_from_json(self):
+        templates_file = TodoApp.get_templates_file()
+        templates_file.write_text(json.dumps([
+            {"template_id": "custom", "name": "自定义模板", "subtasks": ["步骤 A", "步骤 B"]}
+        ]), encoding='utf-8')
+
+        templates = self.app.load_templates()
+
+        self.assertEqual(templates[0]['name'], "自定义模板")
+        self.assertEqual(templates[0]['subtasks'], ["步骤 A", "步骤 B"])
+
     @patch('todo_app.todo_app.Path.write_text')
     def test_save_tasks(self, mock_write_text):
         self.app.tasks = [
@@ -62,6 +74,34 @@ class TestTodoApp(unittest.TestCase):
         self.assertFalse(saved_data[0]['done'])
         self.assertTrue(saved_data[1]['urgent'])
         self.assertTrue(saved_data[2]['separator'])
+
+    @patch('todo_app.todo_app.messagebox.showinfo')
+    @patch('todo_app.todo_app.filedialog.askopenfilename')
+    def test_import_templates_merges_json(self, mock_open, mock_info):
+        source = Path(self.temp_dir.name) / 'import.json'
+        source.write_text(json.dumps([
+            {"name": "外部模板", "subtasks": ["外部步骤"]}
+        ]), encoding='utf-8')
+        mock_open.return_value = str(source)
+
+        self.app.import_templates()
+
+        imported = next(template for template in self.app.templates if template['name'] == "外部模板")
+        self.assertEqual(imported['subtasks'], ["外部步骤"])
+        mock_info.assert_called_once()
+
+    @patch('todo_app.todo_app.messagebox.showinfo')
+    @patch('todo_app.todo_app.filedialog.asksaveasfilename')
+    def test_export_templates_writes_json(self, mock_save, mock_info):
+        target = Path(self.temp_dir.name) / 'export.json'
+        mock_save.return_value = str(target)
+        self.app.templates = [{"template_id": "x", "name": "导出模板", "subtasks": ["步骤"]}]
+
+        self.app.export_templates()
+
+        exported = json.loads(target.read_text(encoding='utf-8'))
+        self.assertEqual(exported[0]['name'], "导出模板")
+        mock_info.assert_called_once()
 
     def test_toggle_dark_mode(self):
         initial_mode = self.app.is_dark_mode
@@ -99,6 +139,38 @@ class TestTodoApp(unittest.TestCase):
         self.assertEqual(len(self.app.tasks), 1)
         self.assertEqual(self.app.tasks[0]['name'], "New Task")
         self.assertFalse(self.app.tasks[0]['done'])
+
+    def test_add_so_character_task_does_not_apply_template(self):
+        self.app.entry = MagicMock()
+        self.app.entry.get.return_value = "SO｜易嘉易｜新角色制作"
+        with patch.object(self.app, 'populate_listbox_without_width_change'), patch.object(self.app, 'save_tasks'):
+            self.app.add_task()
+
+        self.assertEqual(len(self.app.tasks), 1)
+        self.assertEqual(self.app.tasks[0]['name'], "SO｜易嘉易｜新角色制作")
+        self.assertFalse(self.app.tasks[0].get('is_subtask', False))
+
+    def test_apply_template_to_selected_main_task(self):
+        parent = {
+            "name": "主任务",
+            "done": False,
+            "cancelled": False,
+            "urgent": False,
+            "separator": False,
+            "task_id": "parent-id",
+        }
+        self.app.tasks = [parent]
+        self.app.display_tasks = [parent]
+        self.app.listbox = MagicMock()
+        self.app.listbox.curselection.return_value = [0]
+        template = {"name": "测试模板", "subtasks": ["步骤一", "步骤二"]}
+
+        with patch.object(self.app, 'populate_listbox_without_width_change'), patch.object(self.app, 'save_tasks'), patch.object(self.app, 'update_buttons_state'), patch.object(self.app, 'update_title'):
+            self.app.apply_template_to_selected_task(template)
+
+        self.assertEqual([task['name'] for task in self.app.tasks], ["主任务", "步骤一", "步骤二"])
+        self.assertTrue(all(task['is_subtask'] for task in self.app.tasks[1:]))
+        self.assertTrue(all(task['parent_task_id'] == "parent-id" for task in self.app.tasks[1:]))
 
     @patch('todo_app.todo_app.TodoApp.populate_listbox')
     @patch('todo_app.todo_app.TodoApp.save_tasks')

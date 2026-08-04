@@ -23,7 +23,7 @@ python build_exe.py
 pip install pyinstaller
 
 # 2. 构建单文件 EXE
-pyinstaller --onefile --windowed --name=TodoApp --icon=todo_app/app_icon.ico --add-data="todo_app/app_icon.ico;." --add-data="todo_app/app_logo.png;." --hidden-import=tkcalendar --hidden-import=pywinstyles todo_app/todo_app.py
+pyinstaller --onefile --windowed --name=TodoApp --icon=todo_app/app_icon.ico --paths=todo_app --add-data="todo_app/app_icon.ico;." --add-data="todo_app/app_logo.png;." --add-data="todo_app/default_templates.json;." --hidden-import=edge_hide --hidden-import=tkcalendar --hidden-import=pywinstyles todo_app/todo_app.py
 
 # 3. 生成的 EXE 位于: dist/TodoApp.exe
 ```
@@ -36,7 +36,7 @@ pyinstaller --onefile --windowed --name=TodoApp --icon=todo_app/app_icon.ico --a
 release/
 ├── TodoApp.exe                                    # 单文件可执行程序
 ├── README_便携版.txt                              # 使用说明
-└── TodoApp_v1.0.0_Portable_Windows.zip           # 发布压缩包
+└── TodoApp_v1.0.1_Portable_Windows.zip           # 发布压缩包
 ```
 
 ## 🔧 PyInstaller 参数说明
@@ -63,7 +63,7 @@ release/
 
 ### 用户使用步骤：
 
-1. **解压** `TodoApp_v1.0.0_Portable_Windows.zip`
+1. **解压** `TodoApp_v1.0.1_Portable_Windows.zip`
 2. **双击** `TodoApp.exe` 启动
 3. **首次运行**会在同目录创建 `todo_app/` 文件夹
 4. **数据保存**在本地，完全私密
@@ -139,9 +139,9 @@ VSVersionInfo(
         u'040904B0',
         [StringStruct(u'CompanyName', u'Your Company'),
         StringStruct(u'FileDescription', u'Todo App'),
-        StringStruct(u'FileVersion', u'1.0.0'),
+        StringStruct(u'FileVersion', u'1.0.1'),
         StringStruct(u'ProductName', u'TodoApp'),
-        StringStruct(u'ProductVersion', u'1.0.0')])
+        StringStruct(u'ProductVersion', u'1.0.1')])
     ]),
     VarFileInfo([VarStruct(u'Translation', [1033, 1200])])
   ]
@@ -188,7 +188,7 @@ VSVersionInfo(
    - 记录文件大小
 
 3. **创建 GitHub Release**
-   - 版本号: v1.0.0
+   - 版本号: v1.0.1
    - 上传 ZIP 文件
    - 复制 CHANGELOG 作为说明
 

@@ -43,7 +43,7 @@ def main() -> None:
     with info_plist.open("rb") as stream:
         metadata = plistlib.load(stream)
     metadata.update({
-        "CFBundleShortVersionString": "1.0.0",
+        "CFBundleShortVersionString": "1.0.1",
         "CFBundleVersion": "1",
         "LSApplicationCategoryType": "public.app-category.productivity",
     })
