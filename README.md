@@ -62,9 +62,22 @@ Free and open-source alternative to Microsoft To Do with advanced task managemen
 - **🎭 Alternating Row Colors** - Better visual separation
 - **🔗 Right-click Context Menu** - Quick access to all actions
 
+### Subtask List & Date Records (v1.0.2)
+- **🪗 Collapsible Subtasks** - Right-click → Subtasks
+  - Collapse/expand one task, or all tasks at once
+  - Collapsed tasks show `▶ N subtasks`
+  - Collapse state survives restarts
+- **🗓️ Start / Pause / End Dates** - Right-click → Date Records
+  - One-click record for today, or manual `YYYY-MM-DD` editing
+  - Pause keeps its date as history; resuming clears the paused flag
+  - Rows show a compact `始MM-DD 停MM-DD 结MM-DD` suffix
+- **📋 Copy Subtasks** - Right-click → Subtasks → Copy subtasks to…
+  - Pick one or more target tasks, optionally unfinished subtasks only
+  - Copies are new subtasks; the source task is never modified
+
 ## Installation
 
-### Download Portable .EXE for Windows 10/11: [🔗 TodoApp_v1.0.1_Portable_Windows.zip](https://github.com/aaronfang/todo-app/releases/download/v1.0.1/TodoApp_v1.0.1_Portable_Windows.zip)
+### Download Portable .EXE for Windows 10/11: [🔗 TodoApp_v1.0.2_Portable_Windows.zip](https://github.com/aaronfang/todo-app/releases/download/v1.0.2/TodoApp_v1.0.2_Portable_Windows.zip)
 
 or [visit the release page](https://github.com/jltk/todo-app/releases). 
 

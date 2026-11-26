@@ -38,6 +38,7 @@ class TodoApp:
         self.selected_indices = set()
         self.collapsed_sections = set()  # 记录哪些分组的已完成任务被折叠
         self.collapsed_subtask_sections = set()  # 记录哪些主任务的已完成子任务被折叠（key=parent_task_id）
+        self.collapsed_task_ids = set()  # 记录哪些主任务的整个子任务列表被折叠（key=task_id）
 
         self.root.withdraw()
 
@@ -404,6 +405,21 @@ class TodoApp:
         self.context_menu.add_command(label="设置截止日期", command=self.set_deadline_shortcut)
         self.context_menu.add_command(label="设置背景颜色", command=self.set_task_background_color_shortcut)
         self.context_menu.add_command(label="添加子任务", command=self.add_subtask_shortcut)
+        self.subtask_menu = tk.Menu(self.context_menu, tearoff=0)
+        self.subtask_menu.add_command(label="折叠/展开子任务", command=self.toggle_selected_subtasks_collapsed)
+        self.subtask_menu.add_command(label="折叠所有子任务", command=lambda: self.set_all_subtasks_collapsed(True))
+        self.subtask_menu.add_command(label="展开所有子任务", command=lambda: self.set_all_subtasks_collapsed(False))
+        self.subtask_menu.add_separator()
+        self.subtask_menu.add_command(label="复制子任务到其他任务…", command=self.copy_subtasks_to_other_task)
+        self.context_menu.add_cascade(label="子任务", menu=self.subtask_menu)
+        self.context_menu.add_separator()
+        self.date_menu = tk.Menu(self.context_menu, tearoff=0)
+        self.date_menu.add_command(label="记录开始日期（今天）", command=lambda: self.record_task_date('start'))
+        self.date_menu.add_command(label="暂停/继续（记录暂停日期）", command=lambda: self.record_task_date('pause'))
+        self.date_menu.add_command(label="记录结束日期（今天）", command=lambda: self.record_task_date('end'))
+        self.date_menu.add_separator()
+        self.date_menu.add_command(label="编辑日期…", command=self.edit_task_dates)
+        self.context_menu.add_cascade(label="日期记录", menu=self.date_menu)
         self.context_menu.add_separator()
         self.apply_template_menu = tk.Menu(self.context_menu, tearoff=0)
         self.context_menu.add_cascade(label="应用模板", menu=self.apply_template_menu)
@@ -571,6 +587,10 @@ class TodoApp:
                 if task['done'] and not was_done:
                     # 标记为完成时，记录完成时间
                     task['completed_time'] = datetime.now().strftime('%Y-%m-%d %H:%M')
+                    # 只对已经记录了日期的任务补全结束日期，避免改动旧任务的历史
+                    if not task.get('end_date') and (task.get('start_date') or task.get('pause_date')):
+                        task['end_date'] = task['completed_time'][:10]
+                    task.pop('paused', None)
                     # 如果有紧急状态，保存它以便后续恢复
                     if task.get('urgent', False):
                         task['was_urgent'] = True
@@ -578,6 +598,9 @@ class TodoApp:
                 elif not task['done'] and was_done:
                     # 取消完成时，删除完成时间
                     task.pop('completed_time', None)
+                    # 结束日期是随完成自动记录的，一并清除
+                    if task.get('end_date'):
+                        task.pop('end_date', None)
                     # 恢复之前的紧急状态
                     if task.get('was_urgent', False):
                         task['urgent'] = True
@@ -905,32 +928,18 @@ class TodoApp:
                 if is_main_task:
                     main_task_count += 1
                 
-                icons = self.get_task_icons()
-                deadline_indicator = self.get_deadline_indicator(task)
-                
-                # 子任务缩进
-                indent = "    " if task.get('is_subtask', False) else ""
+                display_text = self.format_task_display_text(task)
                 
                 # 根据主任务计数决定背景色（奇偶交替）
                 use_alt_bg = (main_task_count % 2 == 0)
+                bg_color = colors['alt_bg'] if use_alt_bg else colors['listbox_bg']
                 
+                self.listbox.insert(tk.END, display_text)
                 if task.get('cancelled', False):
-                    display_text = f"{indent}{icons['cancelled']} {task['name']}{deadline_indicator}" 
-                    self.listbox.insert(tk.END, display_text)
-                    bg_color = colors['alt_bg'] if use_alt_bg else colors['listbox_bg']
                     self.listbox.itemconfig(index, {'bg': bg_color, 'fg': '#a9a9a9'})
                 elif task.get('done', False):
-                    completed_time = task.get('completed_time', '')
-                    time_str = f" [{completed_time}]" if completed_time else ""
-                    # 使用删除线样式
-                    display_text = f"{indent}{icons['checked']} {self.add_strikethrough(task['name'])}{time_str}"
-                    self.listbox.insert(tk.END, display_text)
-                    bg_color = colors['alt_bg'] if use_alt_bg else colors['listbox_bg']
                     self.listbox.itemconfig(index, {'bg': bg_color, 'fg': colors['done_fg']})
                 else:
-                    display_text = f"{indent}{icons['unchecked']} {task['name']}{deadline_indicator}"
-                    self.listbox.insert(tk.END, display_text)
-                    bg_color = colors['alt_bg'] if use_alt_bg else colors['listbox_bg']
                     self.listbox.itemconfig(index, {'bg': bg_color, 'fg': colors['fg']})
         
         # display_tasks 用于显示和事件处理（包含 completed_header）
@@ -976,9 +985,9 @@ class TodoApp:
                     }
                     result.append(completed_header)
                     
-                    # 如果该分组未折叠，则显示已完成任务
+                    # 如果该分组未折叠，则显示已完成任务（折叠的主任务不显示其子任务）
                     if section_id not in self.collapsed_sections:
-                        result.extend(sorted_done_tasks)
+                        result.extend(self.filter_collapsed_subtasks(sorted_done_tasks))
                 
                 result.append(task)
                 current_section_active = []
@@ -1015,6 +1024,11 @@ class TodoApp:
                         # 添加主任务
                         current_section_active.append(main_task)
                         
+                        # 子任务列表被折叠时，主任务下不显示任何子任务
+                        if parent_task_id and parent_task_id in self.collapsed_task_ids:
+                            active_subtasks = []
+                            done_subtasks = []
+                        
                         # 如果有已完成的子任务，先添加子任务折叠标题（紧跟在主任务后面）
                         if done_subtasks:
                             is_collapsed = parent_task_id in self.collapsed_subtask_sections
@@ -1047,10 +1061,21 @@ class TodoApp:
             }
             result.append(completed_header)
             if section_id not in self.collapsed_sections:
-                result.extend(sorted_done_tasks)
+                result.extend(self.filter_collapsed_subtasks(sorted_done_tasks))
         
         return result
     
+    def is_subtask_collapsed(self, subtask):
+        """子任务是否因为父任务折叠而不显示"""
+        parent_id = subtask.get('parent_task_id')
+        if not parent_id or parent_id not in self.collapsed_task_ids:
+            return False
+        parent = next((t for t in self.tasks if t.get('task_id') == parent_id), None)
+        return bool(parent) and self.is_main_task(parent)
+
+    def filter_collapsed_subtasks(self, tasks):
+        return [task for task in tasks if not self.is_subtask_collapsed(task)]
+
     def sort_tasks_preserve_hierarchy(self, tasks):
         """对任务进行排序，但保持子任务跟随主任务的层级关系"""
         # 分离主任务和子任务
@@ -1098,6 +1123,81 @@ class TodoApp:
                 return f' 📅{deadline}'
         except:
             return ''
+
+    @staticmethod
+    def format_short_date(date_str):
+        """当年日期显示为 MM-DD，跨年显示完整日期"""
+        try:
+            date = datetime.strptime(str(date_str)[:10], '%Y-%m-%d')
+        except (ValueError, TypeError):
+            return str(date_str)
+        if date.year == datetime.now().year:
+            return date.strftime('%m-%d')
+        return date.strftime('%Y-%m-%d')
+
+    def get_task_dates_indicator(self, task):
+        """获取开始/暂停/结束日期提示（未记录日期的任务返回空字符串）"""
+        parts = []
+        if task.get('start_date'):
+            parts.append(f"始{self.format_short_date(task['start_date'])}")
+        if task.get('pause_date'):
+            is_paused = (task.get('paused', False) and
+                         not task.get('done', False) and
+                         not task.get('cancelled', False))
+            label = '⏸停' if is_paused else '停'
+            parts.append(f"{label}{self.format_short_date(task['pause_date'])}")
+        end_date = task.get('end_date')
+        if end_date:
+            # 已完成任务的完成时间已经显示，结束日期相同时不重复显示
+            same_as_completed = (task.get('done', False) and
+                                 task.get('completed_time', '')[:10] == end_date)
+            if not same_as_completed:
+                parts.append(f"结{self.format_short_date(end_date)}")
+        return f" [{' '.join(parts)}]" if parts else ''
+
+    def get_subtasks_of(self, task):
+        task_id = task.get('task_id')
+        if not task_id:
+            return []
+        return [t for t in self.tasks
+                if t.get('is_subtask', False) and t.get('parent_task_id') == task_id]
+
+    @staticmethod
+    def is_main_task(task):
+        return not (task.get('separator', False) or
+                    task.get('completed_header', False) or
+                    task.get('subtask_completed_header', False) or
+                    task.get('is_subtask', False))
+
+    def get_subtask_collapse_indicator(self, task):
+        """主任务子任务列表折叠时显示被隐藏的子任务数量"""
+        if not self.is_main_task(task):
+            return ''
+        if task.get('task_id') not in self.collapsed_task_ids:
+            return ''
+        count = len(self.get_subtasks_of(task))
+        return f"  ▶ {count}个子任务" if count else ''
+
+    def format_task_display_text(self, task, strikethrough=True):
+        """生成普通任务（非分割线、非折叠标题）的显示文本"""
+        icons = self.get_task_icons()
+        deadline_indicator = self.get_deadline_indicator(task)
+        extra = ""
+        dates_indicator = self.get_task_dates_indicator(task)
+        collapse_indicator = self.get_subtask_collapse_indicator(task)
+        if dates_indicator:
+            extra += dates_indicator
+        if collapse_indicator:
+            extra += collapse_indicator
+        indent = "    " if task.get('is_subtask', False) else ""
+        if task.get('cancelled', False):
+            return f"{indent}{icons['cancelled']} {task['name']}{deadline_indicator}{extra}"
+        if task.get('done', False):
+            completed_time = task.get('completed_time', '')
+            time_str = f" [{completed_time}]" if completed_time else ""
+            name = self.add_strikethrough(task['name']) if strikethrough else task['name']
+            return f"{indent}{icons['checked']} {name}{time_str}{extra}"
+        return f"{indent}{icons['unchecked']} {task['name']}{deadline_indicator}{extra}"
 
     def update_buttons_state(self, event=None):
         selected_indices = self.listbox.curselection()
@@ -1252,21 +1352,8 @@ class TodoApp:
                     arrow = '▶' if is_collapsed else '▼'
                     display_text = f"        {arrow} 已完成子任务 ({done_count})"
                 else:
-                    icons = self.get_task_icons()
-                    deadline_indicator = self.get_deadline_indicator(task)
-                    
-                    # 子任务缩进
-                    indent = "    " if task.get('is_subtask', False) else ""
-                    
-                    if task.get('cancelled', False):
-                        display_text = f"{indent}{icons['cancelled']} {task['name']}{deadline_indicator}"
-                    elif task.get('done', False):
-                        completed_time = task.get('completed_time', '')
-                        time_str = f" [{completed_time}]" if completed_time else ""
-                        # 在宽度计算时使用原始文本，不使用删除线版本
-                        display_text = f"{indent}{icons['checked']} {task['name']}{time_str}"
-                    else:
-                        display_text = f"{indent}{icons['unchecked']} {task['name']}{deadline_indicator}"
+                    # 在宽度计算时使用原始文本，不使用删除线版本
+                    display_text = self.format_task_display_text(task, strikethrough=False)
                 
                 # 测量文本宽度（加上边距和滚动条等）
                 text_width = font.measure(display_text) + 80  # 加上padding和边距
@@ -1491,32 +1578,18 @@ class TodoApp:
                 if is_main_task:
                     main_task_count += 1
                 
-                icons = self.get_task_icons()
-                deadline_indicator = self.get_deadline_indicator(task)
-                
-                # 子任务缩进
-                indent = "    " if task.get('is_subtask', False) else ""
+                display_text = self.format_task_display_text(task)
                 
                 # 根据主任务计数决定背景色（奇偶交替）
                 use_alt_bg = (main_task_count % 2 == 0)
+                bg_color = colors['alt_bg'] if use_alt_bg else colors['listbox_bg']
                 
+                self.listbox.insert(tk.END, display_text)
                 if task.get('cancelled', False):
-                    display_text = f"{indent}{icons['cancelled']} {task['name']}{deadline_indicator}" 
-                    self.listbox.insert(tk.END, display_text)
-                    bg_color = colors['alt_bg'] if use_alt_bg else colors['listbox_bg']
                     self.listbox.itemconfig(index, {'bg': bg_color, 'fg': '#a9a9a9'})
                 elif task.get('done', False):
-                    completed_time = task.get('completed_time', '')
-                    time_str = f" [{completed_time}]" if completed_time else ""
-                    # 使用删除线样式
-                    display_text = f"{indent}{icons['checked']} {self.add_strikethrough(task['name'])}{time_str}"
-                    self.listbox.insert(tk.END, display_text)
-                    bg_color = colors['alt_bg'] if use_alt_bg else colors['listbox_bg']
                     self.listbox.itemconfig(index, {'bg': bg_color, 'fg': colors['done_fg']})
                 else:
-                    display_text = f"{indent}{icons['unchecked']} {task['name']}{deadline_indicator}"
-                    self.listbox.insert(tk.END, display_text)
-                    bg_color = colors['alt_bg'] if use_alt_bg else colors['listbox_bg']
                     self.listbox.itemconfig(index, {'bg': bg_color, 'fg': colors['fg']})
         
         # display_tasks 用于显示和事件处理（包含 completed_header）
@@ -1821,20 +1894,7 @@ class TodoApp:
         import json
         try:
             # 过滤掉 completed_header，只保存真实的任务
-            tasks_to_save = [{'name': task['name'], 
-                            'done': task.get('done', False), 
-                            'cancelled': task.get('cancelled', False), 
-                            'urgent': task.get('urgent', False), 
-                            'separator': task.get('separator', False), 
-                            'title': task.get('title', False),
-                            'completed_time': task.get('completed_time', ''),
-                            'deadline': task.get('deadline', ''),
-                            'was_urgent': task.get('was_urgent', False),
-                            'subtasks': task.get('subtasks', []),  # 添加子任务支持
-                            'is_subtask': task.get('is_subtask', False),  # 标记是否为子任务
-                            'parent_task_id': task.get('parent_task_id', None),  # 父任务的task_id
-                            'task_id': task.get('task_id', None),  # 任务的唯一ID
-                            'custom_bg_color': task.get('custom_bg_color', '')}  # 自定义背景色
+            tasks_to_save = [self.serialize_task(task)
                             for task in self.tasks 
                             if not task.get('completed_header', False) 
                             and not task.get('subtask_completed_header', False)]
@@ -1842,6 +1902,32 @@ class TodoApp:
             self.get_tasks_file().write_text(json.dumps(tasks_to_save, indent=4), encoding='utf-8')
         except Exception as e:
             print(f"Error saving tasks: {e}")
+
+    TASK_DATE_FIELDS = ('start_date', 'pause_date', 'end_date')
+
+    @classmethod
+    def serialize_task(cls, task):
+        data = {'name': task['name'], 
+                'done': task.get('done', False), 
+                'cancelled': task.get('cancelled', False), 
+                'urgent': task.get('urgent', False), 
+                'separator': task.get('separator', False), 
+                'title': task.get('title', False),
+                'completed_time': task.get('completed_time', ''),
+                'deadline': task.get('deadline', ''),
+                'was_urgent': task.get('was_urgent', False),
+                'subtasks': task.get('subtasks', []),  # 添加子任务支持
+                'is_subtask': task.get('is_subtask', False),  # 标记是否为子任务
+                'parent_task_id': task.get('parent_task_id', None),  # 父任务的task_id
+                'task_id': task.get('task_id', None),  # 任务的唯一ID
+                'custom_bg_color': task.get('custom_bg_color', '')}  # 自定义背景色
+        # 日期记录字段只在有值时写入，旧任务的存储格式保持不变
+        for key in cls.TASK_DATE_FIELDS:
+            if task.get(key):
+                data[key] = task[key]
+        if task.get('paused', False):
+            data['paused'] = True
+        return data
 
     @classmethod
     def get_notes_file(cls):
@@ -1887,6 +1973,9 @@ class TodoApp:
             collapsed_subtask_list = config.get('collapsed_subtask_sections', [])
             self.collapsed_subtask_sections = set(collapsed_subtask_list)
             
+            # 加载主任务子任务列表折叠状态
+            self.collapsed_task_ids = set(config.get('collapsed_task_ids', []))
+            
             self.initial_geometry = config.get('geometry', '')
             self.edge_hide_enabled = config.get('edge_hide', sys.platform == "darwin")
         else:
@@ -1895,6 +1984,7 @@ class TodoApp:
             # 默认全部展开（空集合）
             self.collapsed_sections = set()
             self.collapsed_subtask_sections = set()
+            self.collapsed_task_ids = set()
     
     def get_all_section_ids(self):
         """获取所有分组的ID"""
@@ -1934,7 +2024,11 @@ class TodoApp:
                 'font_size': self.font_size,
                 'edge_hide': self.edge_hide_enabled,
                 'collapsed_sections': list(self.collapsed_sections),
-                'collapsed_subtask_sections': list(self.collapsed_subtask_sections)
+                'collapsed_subtask_sections': list(self.collapsed_subtask_sections),
+                'collapsed_task_ids': sorted(
+                    task_id for task_id in self.collapsed_task_ids
+                    if any(task.get('task_id') == task_id for task in self.tasks)
+                ),
             }
             config_file.write_text(json.dumps(config, indent=4), encoding='utf-8')
         except Exception as e:
@@ -2522,9 +2616,61 @@ class TodoApp:
                     "应用模板",
                     state='normal' if single_main_task_selected and self.templates else 'disabled',
                 )
+                self.update_subtask_menu_state(selected_indices)
+                self.update_date_menu_state(selected_indices)
                 self.context_menu.tk_popup(event.x_root, event.y_root)
         finally:
             self.context_menu.grab_release()
+
+    def get_selected_real_tasks(self):
+        """返回当前选中的真实任务（排除折叠标题和分割线）"""
+        selected = []
+        for index in self.listbox.curselection():
+            if index >= len(self.display_tasks):
+                continue
+            task = self.display_tasks[index]
+            if (task.get('separator', False) or
+                    task.get('completed_header', False) or
+                    task.get('subtask_completed_header', False)):
+                continue
+            if task in self.tasks and task not in selected:
+                selected.append(task)
+        return selected
+
+    def update_subtask_menu_state(self, selected_indices):
+        """按当前选择启用/禁用子任务相关菜单项"""
+        tasks = self.get_selected_real_tasks()
+
+        # 折叠/展开：选中主任务（含子任务）或选中子任务（作用于其父任务）
+        toggleable = False
+        for task in tasks:
+            if task.get('is_subtask', False):
+                parent_id = task.get('parent_task_id')
+                parent = next((t for t in self.tasks if t.get('task_id') == parent_id), None)
+                if parent and self.is_main_task(parent) and self.get_subtasks_of(parent):
+                    toggleable = True
+            elif self.is_main_task(task) and self.get_subtasks_of(task):
+                toggleable = True
+        self.subtask_menu.entryconfig("折叠/展开子任务", state='normal' if toggleable else 'disabled')
+
+        has_any_subtasks = any(
+            self.is_main_task(task) and bool(self.get_subtasks_of(task))
+            for task in self.tasks
+        )
+        self.subtask_menu.entryconfig("折叠所有子任务", state='normal' if has_any_subtasks else 'disabled')
+        self.subtask_menu.entryconfig("展开所有子任务", state='normal' if has_any_subtasks else 'disabled')
+
+        copyable = (len(tasks) == 1 and
+                    self.is_main_task(tasks[0]) and
+                    bool(self.get_subtasks_of(tasks[0])))
+        self.subtask_menu.entryconfig("复制子任务到其他任务…", state='normal' if copyable else 'disabled')
+
+    def update_date_menu_state(self, selected_indices):
+        """按当前选择启用/禁用日期记录菜单项"""
+        enabled = 'normal' if self.get_selected_real_tasks() else 'disabled'
+        for index in range(self.date_menu.index('end') + 1):
+            if self.date_menu.type(index) == 'command':
+                self.date_menu.entryconfig(index, state=enabled)
 
     # Shortcut methods
 
@@ -2762,6 +2908,10 @@ class TodoApp:
                 # 自动完成主任务
                 task['done'] = True
                 task['completed_time'] = datetime.now().strftime('%Y-%m-%d %H:%M')
+                # 只对已经记录了日期的任务补全结束日期
+                if not task.get('end_date') and (task.get('start_date') or task.get('pause_date')):
+                    task['end_date'] = task['completed_time'][:10]
+                task.pop('paused', None)
                 # 如果有紧急状态，保存它
                 if task.get('urgent', False):
                     task['was_urgent'] = True
@@ -2980,7 +3130,364 @@ class TodoApp:
             self.center_window_over_window(deadline_window)
 
     # Subtask methods
-    
+
+    def get_collapse_target_ids(self, tasks):
+        """把选中项映射为需要折叠/展开子任务的主任务 id"""
+        target_ids = []
+        for task in tasks:
+            if task.get('is_subtask', False):
+                parent = next((t for t in self.tasks if t.get('task_id') == task.get('parent_task_id')), None)
+                if parent and self.is_main_task(parent) and self.get_subtasks_of(parent):
+                    if parent['task_id'] not in target_ids:
+                        target_ids.append(parent['task_id'])
+            elif self.is_main_task(task) and self.get_subtasks_of(task):
+                if task['task_id'] not in target_ids:
+                    target_ids.append(task['task_id'])
+        return target_ids
+
+    def toggle_selected_subtasks_collapsed(self, event=None):
+        """折叠/展开选中任务（或选中子任务的父任务）的子任务列表"""
+        target_ids = self.get_collapse_target_ids(self.get_selected_real_tasks())
+        if not target_ids:
+            return
+        # 只要还有展开的，就统一折叠；全部已折叠则统一展开
+        should_collapse = any(task_id not in self.collapsed_task_ids for task_id in target_ids)
+        for task_id in target_ids:
+            if should_collapse:
+                self.collapsed_task_ids.add(task_id)
+            else:
+                self.collapsed_task_ids.discard(task_id)
+        self.listbox.selection_clear(0, tk.END)
+        self.populate_listbox_without_width_change()
+        self.save_config()
+
+    def set_all_subtasks_collapsed(self, collapsed):
+        """折叠或展开所有主任务的子任务列表"""
+        if collapsed:
+            self.collapsed_task_ids = {
+                task['task_id'] for task in self.tasks
+                if self.is_main_task(task) and task.get('task_id') and self.get_subtasks_of(task)
+            }
+        else:
+            self.collapsed_task_ids = set()
+        self.listbox.selection_clear(0, tk.END)
+        self.populate_listbox_without_width_change()
+        self.save_config()
+
+    @staticmethod
+    def index_of_task(tasks, target):
+        """按对象身份（而不是内容相等）定位任务，避免相同内容的任务互相干扰"""
+        for index, task in enumerate(tasks):
+            if task is target:
+                return index
+        return tasks.index(target)
+
+    def collect_copyable_subtask_names(self, source_task, only_active=False):
+        """收集可复制到其他任务的子任务名称"""
+        names = []
+        for subtask in self.get_subtasks_of(source_task):
+            if only_active and (subtask.get('done', False) or subtask.get('cancelled', False)):
+                continue
+            if subtask.get('separator', False):
+                continue
+            names.append(subtask['name'])
+        return names
+
+    def clone_subtasks_to_target(self, source_task, target_task, only_active=False):
+        """把源任务的子任务作为新子任务插入目标任务之后，返回新建的子任务列表"""
+        import uuid
+
+        names = self.collect_copyable_subtask_names(source_task, only_active)
+        if not names:
+            return []
+
+        target_id = target_task.get('task_id')
+        if not target_id:
+            target_id = str(uuid.uuid4())
+            target_task['task_id'] = target_id
+
+        new_subtasks = [{
+            'name': name,
+            'done': False,
+            'cancelled': False,
+            'urgent': False,
+            'separator': False,
+            'is_subtask': True,
+            'parent_task_id': target_id,
+            'task_id': str(uuid.uuid4()),
+        } for name in names]
+
+        target_index = self.index_of_task(self.tasks, target_task)
+        insert_index = target_index + 1
+        for index in range(target_index + 1, len(self.tasks)):
+            existing = self.tasks[index]
+            if not existing.get('is_subtask', False) or existing.get('separator', False):
+                break
+            if existing.get('parent_task_id') == target_id:
+                insert_index = index + 1
+        self.tasks[insert_index:insert_index] = new_subtasks
+        # 目标任务折叠时展开，方便看到复制结果
+        self.collapsed_task_ids.discard(target_id)
+        return new_subtasks
+
+    def copy_subtasks_to_other_task(self, event=None):
+        """把选中任务的所有子任务复制到另一个（或多个）任务"""
+        tasks = self.get_selected_real_tasks()
+        if len(tasks) != 1:
+            return
+        source_task = tasks[0]
+        if not self.is_main_task(source_task):
+            return
+        source_id = source_task.get('task_id')
+        source_subtasks = self.get_subtasks_of(source_task)
+        if not source_subtasks:
+            return
+
+        targets = [
+            task for task in self.tasks
+            if self.is_main_task(task) and task.get('task_id') != source_id
+        ]
+        if not targets:
+            messagebox.showinfo('复制子任务', '没有可以接收子任务的其他任务。', parent=self.root)
+            return
+
+        copy_window = tk.Toplevel(self.root)
+        copy_window.title("复制子任务")
+        copy_window.geometry("380x420")
+        copy_window.minsize(320, 320)
+        copy_window.transient(self.root)
+        copy_window.grab_set()
+        self.set_window_icon(copy_window)
+        self.apply_title_bar_color(copy_window)
+
+        frame = tk.Frame(copy_window, padx=15, pady=15)
+        frame.pack(fill="both", expand=True)
+
+        tk.Label(
+            frame,
+            text=f"将 «{source_task['name']}» 的 {len(source_subtasks)} 个子任务复制到：",
+            font=self.get_system_font(),
+            wraplength=340,
+            justify='left',
+        ).pack(anchor='w', pady=(0, 8))
+
+        list_frame = tk.Frame(frame)
+        list_frame.pack(fill="both", expand=True)
+        target_list = tk.Listbox(
+            list_frame,
+            selectmode='extended',
+            exportselection=False,
+            font=self.get_system_font(),
+            bg=self.get_theme_colors()['listbox_bg'],
+            fg=self.get_theme_colors()['fg'],
+        )
+        scrollbar = ttk.Scrollbar(list_frame, orient='vertical', command=target_list.yview)
+        target_list.configure(yscrollcommand=scrollbar.set)
+        target_list.pack(side='left', fill='both', expand=True)
+        scrollbar.pack(side='right', fill='y')
+
+        for task in targets:
+            status = '✔' if task.get('done', False) else '•'
+            target_list.insert(tk.END, f"{status} {task['name']}")
+
+        only_active = tk.BooleanVar(value=False)
+        tk.Checkbutton(
+            frame,
+            text="只复制未完成的子任务（不含已取消）",
+            variable=only_active,
+            font=self.get_system_font(),
+        ).pack(anchor='w', pady=(8, 4))
+
+        hint = tk.Label(
+            frame,
+            text="按住 Ctrl/Shift 可多选目标任务；原任务的子任务保持不变。",
+            font=(self.get_system_font()[0], self.get_system_font()[1] - 2),
+            fg='gray',
+            wraplength=340,
+            justify='left',
+        )
+        hint.pack(anchor='w', pady=(0, 8))
+
+        def on_copy():
+            selected = [targets[index] for index in target_list.curselection()]
+            if not selected:
+                messagebox.showwarning('复制子任务', '请先选择目标任务。', parent=copy_window)
+                return
+
+            names = self.collect_copyable_subtask_names(source_task, only_active.get())
+            if not names:
+                messagebox.showinfo('复制子任务', '没有符合条件可以复制的子任务。', parent=copy_window)
+                return
+
+            copied = 0
+            for target in selected:
+                copied += len(self.clone_subtasks_to_target(source_task, target, only_active.get()))
+
+            copy_window.destroy()
+            self.populate_listbox_without_width_change()
+            self.save_tasks()
+            self.save_config()
+            self.update_buttons_state()
+            self.update_title()
+            messagebox.showinfo(
+                '复制子任务',
+                f"已复制 {len(names)} 个子任务到 {len(selected)} 个任务（共 {copied} 条）。",
+                parent=self.root,
+            )
+
+        def on_cancel():
+            copy_window.destroy()
+
+        button_frame = tk.Frame(frame)
+        button_frame.pack(fill='x', pady=(5, 0))
+        button_width = 8 if sys.platform == 'darwin' else 6
+        button_padx = (0, 8) if sys.platform == 'darwin' else (0, 5)
+        ttk.Button(button_frame, text="复制", command=on_copy, width=button_width).pack(side='left', padx=button_padx)
+        ttk.Button(button_frame, text="取消", command=on_cancel, width=button_width).pack(side='left')
+
+        copy_window.protocol("WM_DELETE_WINDOW", on_cancel)
+        copy_window.update_idletasks()
+        self.center_window_over_window(copy_window)
+
+    # Date record methods
+
+    def record_task_date(self, kind):
+        """快捷记录开始/暂停/结束日期（作用于所有选中的任务）"""
+        tasks = self.get_selected_real_tasks()
+        if not tasks:
+            return
+        today = datetime.now().strftime('%Y-%m-%d')
+        for task in tasks:
+            if kind == 'start':
+                task['start_date'] = today
+                task.pop('paused', None)
+            elif kind == 'pause':
+                if task.get('paused', False):
+                    task['paused'] = False
+                else:
+                    task['pause_date'] = today
+                    task['paused'] = True
+            elif kind == 'end':
+                task['end_date'] = today
+                task['paused'] = False
+        self.populate_listbox_without_width_change()
+        self.save_tasks()
+        self.update_title()
+
+    def edit_task_dates(self):
+        """手动编辑任务的开始/暂停/结束日期"""
+        tasks = self.get_selected_real_tasks()
+        if not tasks:
+            return
+        task = tasks[0]
+
+        date_window = tk.Toplevel(self.root)
+        date_window.title("编辑日期记录")
+        date_window.geometry("400x250")
+        date_window.transient(self.root)
+        date_window.grab_set()
+        self.set_window_icon(date_window)
+        self.apply_title_bar_color(date_window)
+
+        frame = tk.Frame(date_window, padx=18, pady=15)
+        frame.pack(fill="both", expand=True)
+
+        tk.Label(
+            frame,
+            text=task['name'],
+            font=self.get_system_font(),
+            wraplength=350,
+            justify='left',
+            anchor='w',
+        ).pack(fill='x', pady=(0, 10))
+
+        today = datetime.now()
+
+        def build_row(label_text, current_value):
+            row = tk.Frame(frame)
+            row.pack(fill='x', pady=3)
+            tk.Label(row, text=label_text, width=8, anchor='w', font=self.get_system_font()).pack(side='left')
+            entry = tk.Entry(row, font=self.get_system_font(), width=14)
+            entry.insert(0, current_value or '')
+            entry.pack(side='left')
+
+            def set_today():
+                entry.delete(0, tk.END)
+                entry.insert(0, today.strftime('%Y-%m-%d'))
+
+            def clear():
+                entry.delete(0, tk.END)
+
+            ttk.Button(row, text="今天", width=5, command=set_today).pack(side='left', padx=(6, 2))
+            ttk.Button(row, text="清除", width=5, command=clear).pack(side='left')
+            return entry
+
+        start_entry = build_row("开始日期", task.get('start_date', ''))
+        pause_entry = build_row("暂停日期", task.get('pause_date', ''))
+        end_entry = build_row("结束日期", task.get('end_date', ''))
+
+        paused_var = tk.BooleanVar(value=task.get('paused', False))
+        tk.Checkbutton(
+            frame,
+            text="当前处于暂停状态",
+            variable=paused_var,
+            font=self.get_system_font(),
+        ).pack(anchor='w', pady=(6, 2))
+
+        tk.Label(
+            frame,
+            text="日期格式 YYYY-MM-DD，留空表示未记录。",
+            font=(self.get_system_font()[0], self.get_system_font()[1] - 2),
+            fg='gray',
+        ).pack(anchor='w')
+
+        def on_save():
+            values = {}
+            for key, entry, label in (
+                    ('start_date', start_entry, '开始日期'),
+                    ('pause_date', pause_entry, '暂停日期'),
+                    ('end_date', end_entry, '结束日期')):
+                text = entry.get().strip()
+                if text:
+                    try:
+                        datetime.strptime(text, '%Y-%m-%d')
+                    except ValueError:
+                        messagebox.showerror('编辑日期记录', f"{label}格式不正确，请使用 YYYY-MM-DD。", parent=date_window)
+                        return
+                values[key] = text
+
+            for key, text in values.items():
+                if text:
+                    task[key] = text
+                else:
+                    task.pop(key, None)
+
+            if paused_var.get():
+                task['paused'] = True
+                if not task.get('pause_date'):
+                    task['pause_date'] = today.strftime('%Y-%m-%d')
+            else:
+                task.pop('paused', None)
+
+            date_window.destroy()
+            self.populate_listbox_without_width_change()
+            self.save_tasks()
+            self.update_title()
+
+        def on_cancel():
+            date_window.destroy()
+
+        button_frame = tk.Frame(frame)
+        button_frame.pack(fill='x', pady=(10, 0))
+        button_width = 8 if sys.platform == 'darwin' else 6
+        button_padx = (0, 8) if sys.platform == 'darwin' else (0, 5)
+        ttk.Button(button_frame, text="保存", command=on_save, width=button_width).pack(side='left', padx=button_padx)
+        ttk.Button(button_frame, text="取消", command=on_cancel, width=button_width).pack(side='left')
+
+        date_window.protocol("WM_DELETE_WINDOW", on_cancel)
+        date_window.update_idletasks()
+        self.center_window_over_window(date_window)
+
     def add_subtask_shortcut(self, event=None):
         """添加子任务的快捷方法"""
         if self.listbox.curselection():

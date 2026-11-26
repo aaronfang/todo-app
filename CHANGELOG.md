@@ -2,6 +2,20 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.0.2] - 2026-11-26
+
+### Added
+- Per-task subtask list collapsing. Right-click → `子任务` offers collapse/expand for the selected task, plus collapse-all and expand-all. Collapsed main tasks show `▶ N个子任务` and the state is persisted in `config.json` (`collapsed_task_ids`).
+- Task date records: start date, pause date and end date. Right-click → `日期记录` records today's date for each, toggles pause/resume (the pause date is kept as history), or opens a manual editor with `YYYY-MM-DD` validation. Task rows show a compact `始MM-DD 停MM-DD 结MM-DD` suffix, with `⏸停` while paused.
+- Copy subtasks to other tasks: right-click → `子任务` → `复制子任务到其他任务…` lets you pick one or more target main tasks and optionally copy only unfinished subtasks. Copies are new subtasks with fresh `task_id`s; the source task is untouched.
+
+### Changed
+- Task rendering unified into `format_task_display_text`, so the listbox and the window width measurement can no longer drift apart.
+- Marking a task done now fills `end_date` automatically, but only for tasks that already have a date record; un-marking clears the auto-filled `end_date`.
+
+### Notes
+- Existing task history is preserved: `start_date` / `pause_date` / `end_date` / `paused` are only written when set, so tasks saved before this release keep their original field set.
+
 ## [1.0.1] - 2026-08-04
 
 ### Added

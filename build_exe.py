@@ -132,7 +132,7 @@ def create_portable_package():
     print(f"✓ 已复制到 {target_exe}")
     
     # 创建 README
-    readme_content = """# Todo App v1.0.1 - 便携版
+    readme_content = """# Todo App v1.0.2 - 便携版
 
 ## 📦 使用说明
 
@@ -195,8 +195,8 @@ def create_portable_package():
 
 ---
 
-**版本**: v1.0.1
-**构建日期**: 2026-08-04
+**版本**: v1.0.2
+**构建日期**: 2026-11-26
 **原作者**: Jens Lettkemann
 **增强版**: Aaron
 """
@@ -210,7 +210,7 @@ def create_portable_package():
     try:
         import zipfile
         
-        zip_name = f'TodoApp_v1.0.1_Portable_Windows.zip'
+        zip_name = f'TodoApp_v1.0.2_Portable_Windows.zip'
         zip_path = Path('release') / zip_name
         
         with zipfile.ZipFile(zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
@@ -229,7 +229,7 @@ def create_portable_package():
 def main():
     """主函数"""
     print("=" * 60)
-    print("Todo App v1.0.1 - 单文件 EXE 构建脚本")
+    print("Todo App v1.0.2 - 单文件 EXE 构建脚本")
     print("=" * 60)
     
     # 检查环境
@@ -261,7 +261,7 @@ def main():
         print("=" * 60)
         print("\n📦 发布文件:")
         print("  - release/TodoApp.exe")
-        print("  - release/TodoApp_v1.0.1_Portable_Windows.zip")
+        print("  - release/TodoApp_v1.0.2_Portable_Windows.zip")
         print("\n📝 使用说明:")
         print("  - 解压 ZIP 文件")
         print("  - 双击 TodoApp.exe 运行")
